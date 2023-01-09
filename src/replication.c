@@ -1397,7 +1397,7 @@ void sendBulkToSlave(connection *conn) {
     }
 }
 
-/* Remove one write handler from the list of connections waiting to be writable
+/* 在rdb pipe传输期间，Remove one write handler from the list of connections waiting to be writable
  * during rdb pipe transfer. */
 void rdbPipeWriteHandlerConnRemoved(struct connection *conn) {
     if (!connHasWriteHandler(conn))
@@ -2239,14 +2239,12 @@ char* sendCommandRaw(connection *conn, sds cmd) {
     return NULL;
 }
 
-/* Compose a multi-bulk command and send it to the connection.
- * Used to send AUTH and REPLCONF commands to the master before starting the
- * replication.
+/* 把多个命令组合成一次请求并发送到对端，Compose a multi-bulk command and send it to the connection.
+ * 用于在开始主从复制前发送AUTH 和 REPLCONF命令给master.
  *
- * Takes a list of char* arguments, terminated by a NULL argument.
+ * 传入字符串参数（命令），以NULL结尾
  *
- * The command returns an sds string representing the result of the
- * operation. On error the first byte is a "-".
+ * 传入的命令会返回一个sds字符串表示该命令操作的结果，在失败时返回结果的第一个字节是"-"
  */
 char *sendCommand(connection *conn, ...) {
     va_list ap;
@@ -2525,8 +2523,7 @@ int slaveTryPartialResynchronization(connection *conn, int read_reply) {
     return PSYNC_NOT_SUPPORTED;
 }
 
-/* This handler fires when the non blocking connect was able to
- * establish a connection with the master. */
+/* 当发起的非阻塞连接与master建立连接后，本函数将被调用 */
 void syncWithMaster(connection *conn) {
     char tmpfile[256], *err = NULL;
     int dfd = -1, maxtries = 5;
@@ -2547,11 +2544,10 @@ void syncWithMaster(connection *conn) {
         goto error;
     }
 
-    /* Send a PING to check the master is able to reply without errors. */
+    /* 发送PING以检查master是正常的 Send a PING to check the master is able to reply without errors. */
     if (server.repl_state == REPL_STATE_CONNECTING) {
         serverLog(LL_NOTICE,"Non blocking connect for SYNC fired the event.");
-        /* Delete the writable event so that the readable event remains
-         * registered and we can wait for the PONG reply. */
+        /* 删除可写事件，保留可读事件以便等待PONG响应. */
         connSetReadHandler(conn, syncWithMaster);
         connSetWriteHandler(conn, NULL);
         server.repl_state = REPL_STATE_RECEIVE_PING_REPLY;

@@ -48,6 +48,16 @@ struct __attribute__ ((__packed__)) sdshdr5 {
     unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
     char buf[];
 };
+
+/*
+__attribute__ ((packed)) 的作用就是告诉编译器取消结构在编译过程中的优化对齐，
+按照实际占用字节数进行对齐，是GCC特有的语法。这个功能是跟操作系统没关系，跟编译器有关，
+gcc编译器不是紧凑模式的，我在windows下，用vc的编译器也不是紧凑的，用tc的编译器就是紧凑的
+__attribute__关键字主要是用来在函数或数据声明中设置其属性，可以设置函数属性（Function Attribute）、
+ 变量属性（Variable Attribute）和类型属性（Type Attribute），格式为：__attribute__ ((属性列表))
+ packed属性：使用该属性可以使得变量或者结构体成员使用最小的对齐方式，即对变量是一字节对齐，对域（field）是位对齐(即不对齐，各字段紧凑拼接)
+
+ */
 struct __attribute__ ((__packed__)) sdshdr8 {
     uint8_t len; /* used */
     uint8_t alloc; /* excluding the header and null terminator */

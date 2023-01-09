@@ -2231,7 +2231,7 @@ void closeSocketListeners(socketFds *sfd) {
     sfd->count = 0;
 }
 
-/* Create an event handler for accepting new connections in TCP or TLS domain sockets.
+/* 创建一个事件处理器来接受新的TCP或TLS连接，对全部fd来说都是原子性的
  * This works atomically for all socket fds */
 int createSocketAcceptHandler(socketFds *sfd, aeFileProc *accept_handler) {
     int j;
@@ -2374,9 +2374,9 @@ void makeThreadKillable(void) {
 void initServer(void) {
     int j;
 
-    signal(SIGHUP, SIG_IGN);
-    signal(SIGPIPE, SIG_IGN);
-    setupSignalHandlers();
+    signal(SIGHUP, SIG_IGN);//忽略信号
+    signal(SIGPIPE, SIG_IGN);//忽悠信号
+    setupSignalHandlers();//设置信号处理函数
     makeThreadKillable();
 
     if (server.syslog_enabled) {
@@ -2555,9 +2555,7 @@ void initServer(void) {
     server.repl_good_slaves_count = 0;
     server.last_sig_received = 0;
 
-    /* Create the timer callback, this is our way to process many background
-     * operations incrementally, like clients timeout, eviction of unaccessed
-     * expired keys and so forth. */
+    /* 创建timer回调，这是我们渐进地处理 各种后台操作 的方式，如客户端的超时，清理不访问的过期key等 */
     if (aeCreateTimeEvent(server.el, 1, serverCron, NULL, NULL) == AE_ERR) {
         serverPanic("Can't create event loop timers.");
         exit(1);
@@ -6319,7 +6317,7 @@ static void sigShutdownHandler(int sig) {
     server.shutdown_asap = 1;
     server.last_sig_received = sig;
 }
-
+//设置信号处理函数
 void setupSignalHandlers(void) {
     struct sigaction act;
 
@@ -7082,7 +7080,7 @@ int main(int argc, char **argv) {
     redisSetCpuAffinity(server.server_cpulist);
     setOOMScoreAdj(-1);
 
-    aeMain(server.el);
+    aeMain(server.el);//进入事件循环
     aeDeleteEventLoop(server.el);
     return 0;
 }

@@ -34,7 +34,7 @@
 #include <sys/time.h>
 
 typedef struct aeApiState {
-    int kqfd;
+    int kqfd;//epoll的fd
     struct kevent *events;
 
     /* Events mask for merge read and write event.
@@ -58,7 +58,7 @@ static inline void addEventMask(char *eventsMask, int fd, int mask) {
 static inline void resetEventMask(char *eventsMask, int fd) {
     eventsMask[fd/4] &= ~EVENT_MASK_ENCODE(fd, 0x3);
 }
-
+//创建epoll实例（darwin对应的是kqueue函数），
 static int aeApiCreate(aeEventLoop *eventLoop) {
     aeApiState *state = zmalloc(sizeof(aeApiState));
 
@@ -98,7 +98,7 @@ static void aeApiFree(aeEventLoop *eventLoop) {
     zfree(state->eventsMask);
     zfree(state);
 }
-
+//添加需要监听的fd到epoll里
 static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     aeApiState *state = eventLoop->apidata;
     struct kevent ke;
@@ -127,7 +127,7 @@ static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int mask) {
         kevent(state->kqfd, &ke, 1, NULL, 0, NULL);
     }
 }
-
+//调用epoll_wait()阻塞等待事件
 static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     aeApiState *state = eventLoop->apidata;
     int retval, numevents = 0;

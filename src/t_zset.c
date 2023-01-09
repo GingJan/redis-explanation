@@ -104,7 +104,7 @@ void zslFreeNode(zskiplistNode *node) {
 
 /* Free a whole skiplist. */
 void zslFree(zskiplist *zsl) {
-    zskiplistNode *node = zsl->header->level[0].forward, *next;
+    zskiplistNode *node = zsl->header->level[0].forwardv, *next;
 
     zfree(zsl->header);
     while(node) {
@@ -1332,7 +1332,7 @@ int zsetAdd(robj *zobj, double score, sds ele, int in_flags, int *out_flags, dou
     }
 
     /* Update the sorted set according to its encoding. */
-    if (zobj->encoding == OBJ_ENCODING_LISTPACK) {
+    if (zobj->encoding == OBJ_ENCODING_LISTPACK) {//如果是listpack
         unsigned char *eptr;
 
         if ((eptr = zzlFind(zobj->ptr,ele,&curscore)) != NULL) {
@@ -1401,7 +1401,7 @@ int zsetAdd(robj *zobj, double score, sds ele, int in_flags, int *out_flags, dou
                 return 1;
             }
 
-            curscore = *(double*)dictGetVal(de);
+            curscore = *(double*)dictGetVal(de);//从字段取出该member的score
 
             /* Prepare the score for the increment if needed. */
             if (incr) {
@@ -1421,19 +1421,19 @@ int zsetAdd(robj *zobj, double score, sds ele, int in_flags, int *out_flags, dou
             if (newscore) *newscore = score;
 
             /* Remove and re-insert when score changes. */
-            if (score != curscore) {
-                znode = zslUpdateScore(zs->zsl,curscore,ele,score);
+            if (score != curscore) {//当新的score和旧score不一样时才更新
+                znode = zslUpdateScore(zs->zsl,curscore,ele,score);//更新member的score
                 /* Note that we did not removed the original element from
                  * the hash table representing the sorted set, so we just
                  * update the score. */
-                dictGetVal(de) = &znode->score; /* Update score ptr. */
+                dictGetVal(de) = &znode->score; /* Update score ptr. *///更新字典结点的score
                 *out_flags |= ZADD_OUT_UPDATED;
             }
             return 1;
         } else if (!xx) {
             ele = sdsdup(ele);
-            znode = zslInsert(zs->zsl,score,ele);
-            serverAssert(dictAdd(zs->dict,ele,&znode->score) == DICT_OK);
+            znode = zslInsert(zs->zsl,score,ele);//插入到跳表，返回插入的结点
+            serverAssert(dictAdd(zs->dict,ele,&znode->score) == DICT_OK);//插入到字段
             *out_flags |= ZADD_OUT_ADDED;
             if (newscore) *newscore = score;
             return 1;
@@ -1664,9 +1664,9 @@ void zsetTypeRandomElement(robj *zsetobj, unsigned long zsetsize, listpackEntry 
 /* This generic command implements both ZADD and ZINCRBY. */
 void zaddGenericCommand(client *c, int flags) {
     static char *nanerr = "resulting score is not a number (NaN)";
-    robj *key = c->argv[1];
+    robj *key = c->argv[1];//获取第一个参数，key
     robj *zobj;
-    sds ele;
+    sds ele;//元素member
     double score = 0, *scores = NULL;
     int j, elements, ch = 0;
     int scoreidx = 0;
@@ -1681,7 +1681,7 @@ void zaddGenericCommand(client *c, int flags) {
     /* Parse options. At the end 'scoreidx' is set to the argument position
      * of the score of the first score-element pair. */
     scoreidx = 2;
-    while(scoreidx < c->argc) {
+    while(scoreidx < c->argc) {//解析命令的参数个数
         char *opt = c->argv[scoreidx]->ptr;
         if (!strcasecmp(opt,"nx")) flags |= ZADD_IN_NX;
         else if (!strcasecmp(opt,"xx")) flags |= ZADD_IN_XX;
@@ -1703,7 +1703,7 @@ void zaddGenericCommand(client *c, int flags) {
     /* After the options, we expect to have an even number of args, since
      * we expect any number of score-element pairs. */
     elements = c->argc-scoreidx;
-    if (elements % 2 || !elements) {
+    if (elements % 2 || !elements) {//当元素member个数不是双数 或 不存在元素时 返回错误
         addReplyErrorObject(c,shared.syntaxerr);
         return;
     }
@@ -1739,7 +1739,7 @@ void zaddGenericCommand(client *c, int flags) {
     }
 
     /* Lookup the key and create the sorted set if does not exist. */
-    zobj = lookupKeyWrite(c->db,key);
+    zobj = lookupKeyWrite(c->db,key);//在db里找是否已有该key
     if (checkType(c,zobj,OBJ_ZSET)) goto cleanup;
     if (zobj == NULL) {
         if (xx) goto reply_to_client; /* No key + XX option: nothing to do. */
@@ -1750,7 +1750,7 @@ void zaddGenericCommand(client *c, int flags) {
         } else {
             zobj = createZsetListpackObject();
         }
-        dbAdd(c->db,key,zobj);
+        dbAdd(c->db,key,zobj);//把zobj添加到db里
     }
 
     for (j = 0; j < elements; j++) {
@@ -1769,9 +1769,9 @@ void zaddGenericCommand(client *c, int flags) {
         if (!(retflags & ZADD_OUT_NOP)) processed++;
         score = newscore;
     }
-    server.dirty += (added+updated);
+    server.dirty += (added+updated);//从上一次bgsave开始到目前 db改变的次数
 
-reply_to_client:
+reply_to_client://回复client
     if (incr) { /* ZINCRBY or INCR option. */
         if (processed)
             addReplyDouble(c,score);

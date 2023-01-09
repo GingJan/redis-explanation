@@ -394,7 +394,7 @@ typedef enum {
     REPL_STATE_CONNECT,             /* Must connect to master */
     REPL_STATE_CONNECTING,          /* Connecting to master */
     /* --- Handshake states, must be ordered --- */
-    REPL_STATE_RECEIVE_PING_REPLY,  /* Wait for PING reply */
+    REPL_STATE_RECEIVE_PING_REPLY,  /* 等待PING命令的响应Wait for PING reply */
     REPL_STATE_SEND_HANDSHAKE,      /* Send handshake sequence to master */
     REPL_STATE_RECEIVE_AUTH_REPLY,  /* Wait for AUTH reply */
     REPL_STATE_RECEIVE_PORT_REPLY,  /* Wait for REPLCONF reply */
@@ -1454,7 +1454,7 @@ struct redisServer {
     mode_t umask;               /* The umask value of the process on startup */
     int hz;                     /* serverCron() calls frequency in hertz */
     int in_fork_child;          /* indication that this is a fork child */
-    redisDb *db;
+    redisDb *db;                /* 一个数组，存放所有数据库 */
     dict *commands;             /* Command table */
     dict *orig_commands;        /* Command table before command renaming. */
     aeEventLoop *el;
@@ -1630,7 +1630,7 @@ struct redisServer {
     int active_defrag_cycle_max;       /* maximal effort for defrag in CPU percentage */
     unsigned long active_defrag_max_scan_fields; /* maximum number of fields of set/hash/zset/list to process from within the main dict scan */
     size_t client_max_querybuf_len; /* Limit for client query buffer length */
-    int dbnum;                      /* Total number of configured DBs */
+    int dbnum;                      /* 初始数据库的个数 Total number of configured DBs */
     int supervised;                 /* 1 if supervised, 0 otherwise. */
     int supervised_mode;            /* See SUPERVISED_* */
     int daemonize;                  /* True if running as a daemon */
@@ -1680,7 +1680,7 @@ struct redisServer {
                                         default no. (for testings). */
 
     /* RDB persistence */
-    long long dirty;                /* Changes to DB from the last save */
+    long long dirty;                /* Changes to DB from the last save 从上一次bgsave开始到目前 db改变的次数 */
     long long dirty_before_bgsave;  /* Used to restore dirty on failed BGSAVE */
     long long rdb_last_load_keys_expired;  /* number of expired keys when loading RDB */
     long long rdb_last_load_keys_loaded;   /* number of loaded keys when loading RDB */

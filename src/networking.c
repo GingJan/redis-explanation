@@ -2076,11 +2076,11 @@ void resetClient(client *c) {
  * * DEBUG RELOAD and similar.
  * * When a Lua script is in -BUSY state.
  *
- * So the function will protect the client by doing two things:
+ * 因此本函数会通过以下两步来实现对client的保护：
  *
- * 1) It removes the file events. This way it is not possible that an
+ * 1) 移除所有文件事件It removes the file events. This way it is not possible that an
  *    error is signaled on the socket, freeing the client.
- * 2) Moreover it makes sure that if the client is freed in a different code
+ * 2) 此外，确保Moreover it makes sure that if the client is freed in a different code
  *    path, it is not really released, but only marked for later release. */
 void protectClient(client *c) {
     c->flags |= CLIENT_PROTECTED;

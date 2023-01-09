@@ -29,22 +29,21 @@ typedef enum monotonic_clock_type {
     MONOTONIC_CLOCK_HW,
 } monotonic_clock_type;
 
-/* Call once at startup to initialize the monotonic clock.  Though this only
- * needs to be called once, it may be called additional times without impact.
- * Returns a printable string indicating the type of clock initialized.
- * (The returned string is static and doesn't need to be freed.)  */
+/* 在启动时调用一次以初始化monotonic时钟，尽管它只被调用一次，但多次调用也不会造成影响。
+ * 返回一个可打印的字符串，该字符串表式时钟的类型
+ * (返回的字符串是static的，无需释放内存空间。)  */
 const char *monotonicInit();
 
-/* Return a string indicating the type of monotonic clock being used. */
+/* 返回一个字符串，该字符串表式正被使用的monotonic时钟的类型。 */
 const char *monotonicInfoString();
 
-/* Return the type of monotonic clock being used. */
+/* 返回正被使用的monotonic时钟的类型。 */
 monotonic_clock_type monotonicGetType();
 
-/* Functions to measure elapsed time.  Example:
+/* 测量经过的时间，例如:
  *     monotime myTimer;
  *     elapsedStart(&myTimer);
- *     while (elapsedMs(myTimer) < 10) {} // loops for 10ms
+ *     while (elapsedMs(myTimer) < 10) {} // 循环10ms
  */
 static inline void elapsedStart(monotime *start_time) {
     *start_time = getMonotonicUs();

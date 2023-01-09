@@ -26,7 +26,7 @@ static char monotonic_info_string[32];
  */
 
 
-#if defined(USE_PROCESSOR_CLOCK) && defined(__x86_64__) && defined(__linux__)
+#if defined(USE_PROCESSOR_CLOCK) && defined(__x86_64__) && defined(__linux__)//如果是 使用cpu时钟 且 是x86-64位架构 且 是linux系统
 #include <regex.h>
 #include <x86intrin.h>
 

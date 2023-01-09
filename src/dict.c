@@ -212,7 +212,7 @@ int dictRehash(dict *d, int n) {
     int empty_visits = n*10; /* Max number of empty buckets to visit. */
     if (!dictIsRehashing(d)) return 0;
 
-    while(n-- && d->ht_used[0] != 0) {
+    while(n-- && d->ht_used[0] != 0) {//先执行 n && d->ht_used[0] != 0 再执行 n--
         dictEntry *de, *nextde;
 
         /* Note that rehashidx can't overflow as we are sure there are more

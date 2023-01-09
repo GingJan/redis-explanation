@@ -305,11 +305,11 @@ static void connSocketEventHandler(struct aeEventLoop *el, int fd, void *clientD
     int call_write = (mask & AE_WRITABLE) && conn->write_handler;
     int call_read = (mask & AE_READABLE) && conn->read_handler;
 
-    /* Handle normal I/O flows */
+    /* 处理普通的I/O流 Handle normal I/O flows */
     if (!invert && call_read) {
         if (!callHandler(conn, conn->read_handler)) return;
     }
-    /* Fire the writable event. */
+    /* 触发可写事件 Fire the writable event. */
     if (call_write) {
         if (!callHandler(conn, conn->write_handler)) return;
     }

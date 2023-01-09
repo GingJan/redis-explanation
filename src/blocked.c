@@ -121,7 +121,7 @@ void updateStatsOnUnblock(client *c, long blocked_us, long reply_us, int had_err
     latencyAddSampleIfNeeded("command-unblocking",reply_us/1000);
 }
 
-/* This function is called in the beforeSleep() function of the event loop
+/* 本函数在事件循环的beforeSleep()函数里调用，这样是为了处理正在等待的clients的input buffer
  * in order to process the pending input buffer of clients that were
  * unblocked after a blocking operation. */
 void processUnblockedClients(void) {

@@ -179,7 +179,10 @@ int luaRedisReplicateCommandsCommand(lua_State *lua) {
  * process, with 'setup' set to 0, and following a scriptingRelease() call,
  * in order to reset the Lua scripting environment.
  *
- * However it is simpler to just call scriptingReset() that does just that. */
+ * However it is simpler to just call scriptingReset() that does just that.
+ *
+ * 初始化lua脚本运行环境
+ * */
 void scriptingInit(int setup) {
     lua_State *lua = lua_open();
 
@@ -187,7 +190,7 @@ void scriptingInit(int setup) {
         lctx.lua_client = NULL;
         server.script_caller = NULL;
         server.script_disable_deny_script = 0;
-        ldbInit();
+        ldbInit();//初始化lua调试
     }
 
     /* Initialize a dictionary we use to map SHAs to scripts.

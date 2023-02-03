@@ -51,6 +51,7 @@ typedef struct functionLibInfo functionLibInfo;
 
 typedef struct engine {
     /* engine specific context */
+    // 引擎的上下文
     void *engine_ctx;
 
     /* Create function callback, get the engine_ctx, and function code.
@@ -78,7 +79,7 @@ typedef struct engine {
 
     /* free the given function */
     void (*free_function)(void *engine_ctx, void *compiled_function);
-} engine;
+} engine;//引擎结构，用于如lua引擎等
 
 /* Hold information about an engine.
  * Used on rdb.c so it must be declared here. */

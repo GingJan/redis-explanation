@@ -58,7 +58,7 @@ struct aeEventLoop;
 
 /* Types and data structures */
 typedef void aeFileProc(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask);
-typedef int aeTimeProc(struct aeEventLoop *eventLoop, long long id, void *clientData);
+typedef int aeTimeProc(struct aeEventLoop *eventLoop, long long id, void *clientData);//id=fd
 typedef void aeEventFinalizerProc(struct aeEventLoop *eventLoop, void *clientData);
 typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 
@@ -74,14 +74,14 @@ typedef struct aeFileEvent {
 typedef struct aeTimeEvent {
     long long id; /* 时间事件fd */
     monotime when;
-    aeTimeProc *timeProc;
+    aeTimeProc *timeProc;//时间事件的处理函数
     aeEventFinalizerProc *finalizerProc;
     void *clientData;
     struct aeTimeEvent *prev;
     struct aeTimeEvent *next;
     int refcount; /* refcount to prevent timer events from being
   		   * freed in recursive time event calls. */
-} aeTimeEvent;
+} aeTimeEvent;//时间事件
 
 /* 某个被触发的事件 */
 typedef struct aeFiredEvent {
@@ -96,7 +96,7 @@ typedef struct aeEventLoop {
     long long timeEventNextId; //时间事件的id生成器
     aeFileEvent *events; /* 已注册的事件，是一个数组，下标是fd */
     aeFiredEvent *fired; /* 已触发的事件，是一个数组，下标是fd */
-    aeTimeEvent *timeEventHead;
+    aeTimeEvent *timeEventHead; //时间事件链的头节点
     int stop;
     void *apidata; /* 该字段用于存放对应系统创建的epoll实例 */
     aeBeforeSleepProc *beforesleep;

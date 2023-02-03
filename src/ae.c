@@ -154,13 +154,13 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
 void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
+// 创建文件事件
 //eventLoop：事件循环实例
 //fd：需要监听的fd
 //mask：需要监听的事件
 //proc：事件处理函数
-//clientData：数据
-int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
-        aeFileProc *proc, void *clientData)
+//clientData：客户端发来的数据
+int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask, aeFileProc *proc, void *clientData)
 {
     if (fd >= eventLoop->setsize) {
         errno = ERANGE;
@@ -215,11 +215,8 @@ int aeGetFileEvents(aeEventLoop *eventLoop, int fd) {
 
     return fe->mask;
 }
-
-long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
-        aeTimeProc *proc, void *clientData,
-        aeEventFinalizerProc *finalizerProc)
-{
+//创建时间事件池（双向链表）
+long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds, aeTimeProc *proc, void *clientData, aeEventFinalizerProc *finalizerProc) {
     long long id = eventLoop->timeEventNextId++;
     aeTimeEvent *te;
 
@@ -323,7 +320,7 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
             continue;
         }
 
-        if (te->when <= now) {
+        if (te->when <= now) {//当到了/过了 时间事件 的执行时间点 则执行该事件
             int retval;
 
             id = te->id;
@@ -343,7 +340,8 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
     return processed;
 }
 
-/* 先处理每个在等待的时间事件，然后再处理每个在等待的文件事件
+/* 事件循环的核心函数，外层被一个while循环调用
+ * 先处理每个在等待的时间事件，然后再处理每个在等待的文件事件
  * （可能有刚处理的时间事件注册的文件时间）.
  * 若无指定flags，本函数会sleep直到有文件事件触发或下一个时间事件发生
  *
@@ -367,14 +365,13 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
      * file events to process as long as we want to process time
      * events, in order to sleep until the next time event is ready
      * to fire. */
-    if (eventLoop->maxfd != -1 ||
-        ((flags & AE_TIME_EVENTS) && !(flags & AE_DONT_WAIT))) {
+    if (eventLoop->maxfd != -1 || ((flags & AE_TIME_EVENTS) && !(flags & AE_DONT_WAIT))) {
         int j;
         struct timeval tv, *tvp;
         int64_t usUntilTimer = -1;
 
         if (flags & AE_TIME_EVENTS && !(flags & AE_DONT_WAIT))
-            usUntilTimer = usUntilEarliestTimer(eventLoop);
+            usUntilTimer = usUntilEarliestTimer(eventLoop);//距离最近一个时间事件还剩下 usUntilTimer微秒
 
         if (usUntilTimer >= 0) {
             tv.tv_sec = usUntilTimer / 1000000;
@@ -384,11 +381,13 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             /* If we have to check for events but need to return
              * ASAP because of AE_DONT_WAIT we need to set the timeout
              * to zero */
+            //如果设置了AE_DONT_WAIT，则需要尽快返回，因此把tv.tv_sec设置为0
             if (flags & AE_DONT_WAIT) {
                 tv.tv_sec = tv.tv_usec = 0;
                 tvp = &tv;
             } else {
                 /* Otherwise we can block */
+                //否则，则可以阻塞等待
                 tvp = NULL; /* wait forever */
             }
         }
@@ -402,7 +401,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             eventLoop->beforesleep(eventLoop);
 
         /* 调用多路复用api，一直阻塞直到 超时或有事件触发时才返回 */
-        numevents = aeApiPoll(eventLoop, tvp);//numevents 触发事件的个数，aeApiPoll()调用对应系统的epoll_wait()
+        numevents = aeApiPoll(eventLoop, tvp);//numevents 触发事件的个数，aeApiPoll()底层是调用对应系统的epoll_wait()
 
         /* 回调aftersleep函数 */
         if (eventLoop->aftersleep != NULL && flags & AE_CALL_AFTER_SLEEP)
@@ -485,7 +484,7 @@ int aeWait(int fd, int mask, long long milliseconds) {
 }
 
 void aeMain(aeEventLoop *eventLoop) {
-    eventLoop->stop = 0;
+    eventLoop->stop = 0;//事件循环的停止标识
     while (!eventLoop->stop) {
         aeProcessEvents(eventLoop, AE_ALL_EVENTS|
                                    AE_CALL_BEFORE_SLEEP|

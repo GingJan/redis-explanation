@@ -55,7 +55,7 @@ void zlibc_free(void *ptr) {
 #include "zmalloc.h"
 #include "atomicvar.h"
 
-#ifdef HAVE_MALLOC_SIZE
+#ifdef HAVE_MALLOC_SIZE//若系统有实现malloc_size函数
 #define PREFIX_SIZE (0)
 #define ASSERT_NO_SIZE_OVERFLOW(sz)
 #else
@@ -87,10 +87,10 @@ void zlibc_free(void *ptr) {
 #define dallocx(ptr,flags) je_dallocx(ptr,flags)
 #endif
 
-#define update_zmalloc_stat_alloc(__n) atomicIncr(used_memory,(__n))
-#define update_zmalloc_stat_free(__n) atomicDecr(used_memory,(__n))
+#define update_zmalloc_stat_alloc(__n) atomicIncr(used_memory,(__n))//更新已使用内存，+1
+#define update_zmalloc_stat_free(__n) atomicDecr(used_memory,(__n))//更新已使用内存，-1
 
-static redisAtomic size_t used_memory = 0;
+static redisAtomic size_t used_memory = 0;//已使用内存（的字节数）在分配内存或释放时，都会累计到这个变量
 
 static void zmalloc_default_oom(size_t size) {
     fprintf(stderr, "zmalloc: Out of memory trying to allocate %zu bytes\n",
@@ -103,28 +103,33 @@ static void (*zmalloc_oom_handler)(size_t) = zmalloc_default_oom;
 
 /* Try allocating memory, and return NULL if failed.
  * '*usable' is set to the usable size if non NULL. */
+// 尝试分配内存，分配失败返回NULL。若非NULL，传入的*usable参数会被设为成功分配内存的大小（字节），同时统计总共分配了多少字节的内存
 void *ztrymalloc_usable(size_t size, size_t *usable) {
     ASSERT_NO_SIZE_OVERFLOW(size);
-    void *ptr = malloc(MALLOC_MIN_SIZE(size)+PREFIX_SIZE);
+    void *ptr = malloc(MALLOC_MIN_SIZE(size)+PREFIX_SIZE);//分配内存，后面多申请的PREFIX_SIZE是用于存放本次申请 size 大小的值，可用的内存空间只是size字节
 
-    if (!ptr) return NULL;
-#ifdef HAVE_MALLOC_SIZE
-    size = zmalloc_size(ptr);
-    update_zmalloc_stat_alloc(size);
+    if (!ptr) return NULL;//若分配内存失败，则返回NULL
+
+    /*malloc 等标准库中的内存分配函数会根据当前的系统架构类型自动地进行4/8字节的内存对齐，因此对于应用在存储数据时底层系统实际分配的内存大小我们很难直接进行计算*/
+#ifdef HAVE_MALLOC_SIZE//若系统有实现malloc_size()函数
+    size = zmalloc_size(ptr);//获取本次申请的内容大小（含PREFIX_SIZE）
+    update_zmalloc_stat_alloc(size);//原子更新已使用内存used_memory = used_memory+size
     if (usable) *usable = size;
     return ptr;
 #else
     *((size_t*)ptr) = size;
-    update_zmalloc_stat_alloc(size+PREFIX_SIZE);
+    update_zmalloc_stat_alloc(size+PREFIX_SIZE);//PREFIX_SIZE是用来存 本次申请内存 的大小，这宏PREFIX_SIZE本身占4B或8B（视系统位数）
     if (usable) *usable = size;
     return (char*)ptr+PREFIX_SIZE;
 #endif
 }
 
 /* Allocate memory or panic */
+// 分配内存，失败时抛出panic并且abort()，该函数在分配内存时，会同时统计总共已用内存数量
+// 具体解释 可以查阅：https://zhuanlan.zhihu.com/p/38276637
 void *zmalloc(size_t size) {
-    void *ptr = ztrymalloc_usable(size, NULL);
-    if (!ptr) zmalloc_oom_handler(size);
+    void *ptr = ztrymalloc_usable(size, NULL);// 分配内存，注意 实际分配的内存比size大，多了PREFIX_SIZE个字节，这几个字节用来存放size这个值
+    if (!ptr) zmalloc_oom_handler(size); // 分配失败抛出异常
     return ptr;
 }
 

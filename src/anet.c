@@ -100,6 +100,7 @@ int anetBlock(char *err, int fd) {
 /* Enable the FD_CLOEXEC on the given fd to avoid fd leaks. 
  * This function should be invoked for fd's on specific places 
  * where fork + execve system calls are called. */
+// 设置 fd 为 FD_CLOEXEC，以免fd泄漏
 int anetCloexec(int fd) {
     int r;
     int flags;
@@ -399,7 +400,7 @@ int anetUnixGenericConnect(char *err, const char *path, int flags)
     }
     return s;
 }
-
+//调用系统函数bind和listen对地址端口进行绑定和监听
 static int anetListen(char *err, int s, struct sockaddr *sa, socklen_t len, int backlog) {
     if (bind(s,sa,len) == -1) {
         anetSetError(err, "bind: %s", strerror(errno));
@@ -440,17 +441,19 @@ static int _anetTcpServer(char *err, int port, char *bindaddr, int af, int backl
     if (af == AF_INET6 && bindaddr && !strcmp("::*", bindaddr))
         bindaddr = NULL;
 
-    if ((rv = getaddrinfo(bindaddr,_port,&hints,&servinfo)) != 0) {
+    if ((rv = getaddrinfo(bindaddr,_port,&hints,&servinfo)) != 0) {//把地址，端口，和连接类型解析到servinfo，以便建立监听
         anetSetError(err, "%s", gai_strerror(rv));
         return ANET_ERR;
     }
+
+    //对多个地址端口建立监听（bind & listen）
     for (p = servinfo; p != NULL; p = p->ai_next) {
-        if ((s = socket(p->ai_family,p->ai_socktype,p->ai_protocol)) == -1)
+        if ((s = socket(p->ai_family,p->ai_socktype,p->ai_protocol)) == -1)//调用系统函数socket，创建监听socket，s=新fd
             continue;
 
         if (af == AF_INET6 && anetV6Only(err,s) == ANET_ERR) goto error;
-        if (anetSetReuseAddr(err,s) == ANET_ERR) goto error;
-        if (anetListen(err,s,p->ai_addr,p->ai_addrlen,backlog) == ANET_ERR) s = ANET_ERR;
+        if (anetSetReuseAddr(err,s) == ANET_ERR) goto error;//socket复用 reuseaddr，可
+        if (anetListen(err,s,p->ai_addr,p->ai_addrlen,backlog) == ANET_ERR) s = ANET_ERR;//调用系统函数bind和listen对地址端口进行绑定和监听
         goto end;
     }
     if (p == NULL) {
@@ -465,12 +468,12 @@ end:
     freeaddrinfo(servinfo);
     return s;
 }
-
+//建立ipv4 tcp监听
 int anetTcpServer(char *err, int port, char *bindaddr, int backlog)
 {
     return _anetTcpServer(err, port, bindaddr, AF_INET, backlog);
 }
-
+//建立ipv6 tcp监听
 int anetTcp6Server(char *err, int port, char *bindaddr, int backlog)
 {
     return _anetTcpServer(err, port, bindaddr, AF_INET6, backlog);

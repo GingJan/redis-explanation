@@ -36,6 +36,7 @@ typedef struct aeApiState {
     struct epoll_event *events;
 } aeApiState;
 
+//创建epoll实例
 static int aeApiCreate(aeEventLoop *eventLoop) {
     aeApiState *state = zmalloc(sizeof(aeApiState));
 

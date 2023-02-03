@@ -34,8 +34,8 @@
 #include <sys/time.h>
 
 typedef struct aeApiState {
-    int kqfd;//epoll的fd
-    struct kevent *events;
+    int kqfd;//epoll的fd（在drawin就是kqueue的fd）
+    struct kevent *events;//用于存放事件
 
     /* Events mask for merge read and write event.
      * To reduce memory consumption, we use 2 bits to store the mask
@@ -58,14 +58,14 @@ static inline void addEventMask(char *eventsMask, int fd, int mask) {
 static inline void resetEventMask(char *eventsMask, int fd) {
     eventsMask[fd/4] &= ~EVENT_MASK_ENCODE(fd, 0x3);
 }
-//创建epoll实例（darwin对应的是kqueue函数），
+//创建epoll实例（darwin对应的是kqueue函数），并赋给eventLoop
 static int aeApiCreate(aeEventLoop *eventLoop) {
     aeApiState *state = zmalloc(sizeof(aeApiState));
 
     if (!state) return -1;
     state->events = zmalloc(sizeof(struct kevent)*eventLoop->setsize);
     if (!state->events) {
-        zfree(state);
+        zfree(state);//回收已分配的内存
         return -1;
     }
     state->kqfd = kqueue();
@@ -74,9 +74,9 @@ static int aeApiCreate(aeEventLoop *eventLoop) {
         zfree(state);
         return -1;
     }
-    anetCloexec(state->kqfd);
+    anetCloexec(state->kqfd);//避免fd泄漏
     state->eventsMask = zmalloc(EVENT_MASK_MALLOC_SIZE(eventLoop->setsize));
-    memset(state->eventsMask, 0, EVENT_MASK_MALLOC_SIZE(eventLoop->setsize));
+    memset(state->eventsMask, 0, EVENT_MASK_MALLOC_SIZE(eventLoop->setsize));//把指定内存空间都初始化为 0
     eventLoop->apidata = state;
     return 0;
 }
@@ -132,18 +132,17 @@ static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     aeApiState *state = eventLoop->apidata;
     int retval, numevents = 0;
 
-    if (tvp != NULL) {
+    if (tvp != NULL) {//设置了超时时间tvp，阻塞超时后需返回
         struct timespec timeout;
         timeout.tv_sec = tvp->tv_sec;
         timeout.tv_nsec = tvp->tv_usec * 1000;
-        retval = kevent(state->kqfd, NULL, 0, state->events, eventLoop->setsize,
-                        &timeout);
+        retval = kevent(state->kqfd, NULL, 0, state->events, eventLoop->setsize,&timeout);
     } else {
-        retval = kevent(state->kqfd, NULL, 0, state->events, eventLoop->setsize,
-                        NULL);
+        //没有设置超时时间 timeout，因此可以无限期阻塞等待
+        retval = kevent(state->kqfd, NULL, 0, state->events, eventLoop->setsize,NULL);
     }
 
-    if (retval > 0) {
+    if (retval > 0) {//触发的事件个数
         int j;
 
         /* Normally we execute the read event first and then the write event.

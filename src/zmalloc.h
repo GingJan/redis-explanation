@@ -57,7 +57,7 @@
 
 #elif defined(__APPLE__)
 #include <malloc/malloc.h>
-#define HAVE_MALLOC_SIZE 1
+#define HAVE_MALLOC_SIZE 1//是否有实现malloc_size()，1有；HAVE_MALLOC_SIZE用来判断系统是否提供查询malloc()分配的内存大小的函数
 #define zmalloc_size(p) malloc_size(p)
 #endif
 

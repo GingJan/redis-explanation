@@ -114,6 +114,7 @@ dictType librariesDictType = {
 };
 
 /* Dictionary of engines */
+// 引擎字典，该字典里存放不同的引擎和对应数据
 static dict *engines = NULL;
 
 /* Libraries Ctx.
@@ -405,7 +406,10 @@ done:
 /* Register an engine, should be called once by the engine on startup and give the following:
  *
  * - engine_name - name of the engine to register
- * - engine_ctx - the engine ctx that should be used by Redis to interact with the engine */
+ * - engine_ctx - the engine ctx that should be used by Redis to interact with the engine
+ *
+ * 注册一个引擎，如lua引擎，engine_name 引擎名字如Lua，engine_ctx 引擎上下文，用来在引擎和Redis之间的交互
+ * */
 int functionsRegisterEngine(const char *engine_name, engine *engine) {
     sds engine_name_sds = sdsnew(engine_name);
     if (dictFetchValue(engines, engine_name_sds)) {
@@ -1097,7 +1101,7 @@ size_t functionsLibCtxfunctionsLen(functionsLibCtx *functions_ctx) {
 int functionsInit() {
     engines = dictCreate(&engineDictType);
 
-    if (luaEngineInitEngine() != C_OK) {
+    if (luaEngineInitEngine() != C_OK) {//初始化lua引擎
         return C_ERR;
     }
 

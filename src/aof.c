@@ -847,7 +847,7 @@ cleanup:
 #define AOF_REWRITE_LIMITE_MAX_MINUTES  60 /* 1 hour */
 int aofRewriteLimited(void) {
     static int next_delay_minutes = 0;
-    static time_t next_rewrite_time = 0;
+    static time_t next_rewrite_time = 0;//下一次启动AOF重写的时间点（时机）
 
     if (server.stat_aofrw_consecutive_failures < AOF_REWRITE_LIMITE_THRESHOLD) {
         /* We may be recovering from limited state, so reset all states. */

@@ -38,7 +38,10 @@
  * by the user before to call listRelease(), or by setting a free method using
  * listSetFreeMethod.
  *
- * On error, NULL is returned. Otherwise the pointer to the new list. */
+ * On error, NULL is returned. Otherwise the pointer to the new list.
+ *
+ * 创建一个链表
+ * */
 list *listCreate(void)
 {
     struct list *list;

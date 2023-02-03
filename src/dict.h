@@ -59,7 +59,7 @@ typedef struct dictEntry {
 } dictEntry;
 
 typedef struct dict dict;
-
+//字典dict的方法
 typedef struct dictType {
     uint64_t (*hashFunction)(const void *key);
     void *(*keyDup)(dict *d, const void *key);
@@ -71,13 +71,13 @@ typedef struct dictType {
     /* Allow a dictEntry to carry extra caller-defined metadata.  The
      * extra memory is initialized to 0 when a dictEntry is allocated. */
     size_t (*dictEntryMetadataBytes)(dict *d);
-} dictType;
+} dictType;//字典dict的方法
 
 #define DICTHT_SIZE(exp) ((exp) == -1 ? 0 : (unsigned long)1<<(exp))
 #define DICTHT_SIZE_MASK(exp) ((exp) == -1 ? 0 : (DICTHT_SIZE(exp))-1)
 
 struct dict {
-    dictType *type;
+    dictType *type;//一些字典的方法
 
     dictEntry **ht_table[2];
     unsigned long ht_used[2];

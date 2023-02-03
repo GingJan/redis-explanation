@@ -2091,31 +2091,40 @@ void watchdogScheduleSignal(int period) {
     struct itimerval it;
 
     /* Will stop the timer if period is 0. */
-    it.it_value.tv_sec = period/1000;
+    it.it_value.tv_sec = period/1000;//开始计算的时间值
     it.it_value.tv_usec = (period%1000)*1000;
     /* Don't automatically restart. */
-    it.it_interval.tv_sec = 0;
+    it.it_interval.tv_sec = 0;//当interval=0时，则不会重启下一次定时，若为n，则过了n sec/usec 后，触发一个信号，然后再进入下一次定时
     it.it_interval.tv_usec = 0;
-    setitimer(ITIMER_REAL, &it, NULL);
+
+    /*
+    ITIMER_REAL : 以系统真实的时间来计算，它触发SIGALRM信号。　　
+    ITIMER_VIRTUAL : 以该进程在用户态下花费的时间来计算，它触发SIGVTALRM信号。　　
+    ITIMER_PROF : 以该进程在用户态下和内核态下所费的时间来计算，它触发SIGPROF信号。
+
+    第二个参数指定间隔时间，第三个参数用来返回上一次定时器的间隔时间，如果不关心该值可设为NULL。
+    it_interval指定间隔时间，it_value指定初始定时时间。如果只指定it_value，就是实现一次定时；如果同时指定 it_interval，则超时后，系统会重新初始化it_value为it_interval，实现重复定时；两者都清零，则会清除定时器。
+     */
+    setitimer(ITIMER_REAL, &it, NULL);//设置一个系统定时器
 }
 void applyWatchdogPeriod() {
     struct sigaction act;
 
     /* Disable watchdog when period is 0 */
     if (server.watchdog_period == 0) {
-        watchdogScheduleSignal(0); /* Stop the current timer. */
+        watchdogScheduleSignal(0); /* Stop the current timer. 关闭当前定时器 */
 
         /* Set the signal handler to SIG_IGN, this will also remove pending
          * signals from the queue. */
         sigemptyset(&act.sa_mask);
         act.sa_flags = 0;
-        act.sa_handler = SIG_IGN;
+        act.sa_handler = SIG_IGN;//忽略SIGALRM信号
         sigaction(SIGALRM, &act, NULL);
     } else {
         /* Setup the signal handler. */
         sigemptyset(&act.sa_mask);
         act.sa_flags = SA_SIGINFO;
-        act.sa_sigaction = watchdogSignalHandler;
+        act.sa_sigaction = watchdogSignalHandler;//SIGALRM信号的处理函数
         sigaction(SIGALRM, &act, NULL);
 
         /* If the configured period is smaller than twice the timer period, it is
@@ -2123,7 +2132,7 @@ void applyWatchdogPeriod() {
          * if needed. */
         int min_period = (1000/server.hz)*2;
         if (server.watchdog_period < min_period) server.watchdog_period = min_period;
-        watchdogScheduleSignal(server.watchdog_period); /* Adjust the current timer. */
+        watchdogScheduleSignal(server.watchdog_period); /* Adjust the current timer. 调整当前定时器*/
     }
 }
 

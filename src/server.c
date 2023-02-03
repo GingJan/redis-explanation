@@ -184,6 +184,7 @@ err:
 }
 
 /* Return the UNIX time in microseconds */
+// 获取系统当前的UNIX时间戳（微秒）
 long long ustime(void) {
     struct timeval tv;
     long long ust;
@@ -422,7 +423,7 @@ dictType zsetDictType = {
 };
 
 /* Db->dict, keys are sds strings, vals are Redis objects. */
-dictType dbDictType = {
+dictType dbDictType = {//字典方法的具体实现
     dictSdsHash,                /* hash function */
     NULL,                       /* key dup */
     NULL,                       /* val dup */
@@ -434,7 +435,7 @@ dictType dbDictType = {
 };
 
 /* Db->expires */
-dictType dbExpiresDictType = {
+dictType dbExpiresDictType = {//字典方法的具体实现
     dictSdsHash,                /* hash function */
     NULL,                       /* key dup */
     NULL,                       /* val dup */
@@ -593,9 +594,13 @@ int incrementallyRehash(int dbid) {
  * to play well with copy-on-write (otherwise when a resize happens lots of
  * memory pages are copied). The goal of this function is to update the ability
  * for dict.c to resize the hash tables accordingly to the fact we have an
- * active fork child running. */
+ * active fork child running.
+ *
+ * 一旦某个后台任务被终止了，该函数就会被调用，因为当子进程存在时（说明有后台任务在进行），要避免对字典hash表进行resize，这样cow会有更好的效果（否则会有大量的cow操作）
+ *
+ * */
 void updateDictResizePolicy(void) {
-    if (!hasActiveChildProcess())
+    if (!hasActiveChildProcess())//没有后台任务，则启动字典的resize
         dictEnableResize();
     else
         dictDisableResize();
@@ -896,6 +901,8 @@ void getExpansiveClientsInfo(size_t *in_usage, size_t *out_usage) {
  * of clients per second, turning this function into a source of latency.
  */
 #define CLIENTS_CRON_MIN_ITERATIONS 5
+// 需要在后台处理的和client有关的逻辑，例如关闭超时的客户端连接（包括被某个命令阻塞的连接）
+// 本函数会尽量处理全部client
 void clientsCron(void) {
     /* Try to process at least numclients/server.hz of clients
      * per call. Since normally (if there are no big latency events) this
@@ -962,6 +969,7 @@ void clientsCron(void) {
 /* This function handles 'background' operations we are required to do
  * incrementally in Redis databases, such as active key expiring, resizing,
  * rehashing. */
+// 本函数处理 redis 数据库里，需要在后台渐进式执行的操作，例如key的过期，扩容，rehash等
 void databasesCron(void) {
     /* Expire keys by random sampling. Not required for slaves
      * as master will synthesize DELs for us. */
@@ -1026,7 +1034,7 @@ static inline void updateCachedTimeWithUs(int update_daylight_info, const long l
      * context is safe since we will never fork() while here, in the main
      * thread. The logging function will call a thread safe version of
      * localtime that has no locks. */
-    if (update_daylight_info) {
+    if (update_daylight_info) {//更新夏令时信息
         struct tm tm;
         time_t ut = server.unixtime;
         localtime_r(&ut,&tm);
@@ -1046,6 +1054,7 @@ static inline void updateCachedTimeWithUs(int update_daylight_info, const long l
  * calling it from call(). */
 void updateCachedTime(int update_daylight_info) {
     const long long us = ustime();
+    //把系统的时间戳写入server
     updateCachedTimeWithUs(update_daylight_info, us);
 }
 
@@ -1152,6 +1161,9 @@ void cronUpdateMemoryStats() {
  * Everything directly called here will be called server.hz times per second,
  * so in order to throttle execution of things we want to do less frequently
  * a macro is used: run_with_period(milliseconds) { .... }
+ *
+ * 每秒调用 server.hz次，本函数的逻辑都是处理异步任务的，例如：
+ *
  */
 
 int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
@@ -1162,17 +1174,19 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
     /* Software watchdog: deliver the SIGALRM that will reach the signal
      * handler if we don't return here fast enough. */
+    // 如果没有及时返回，定时器会触发SIGALRM信号并导致对应信号处理函数执行
     if (server.watchdog_period) watchdogScheduleSignal(server.watchdog_period);
 
     /* Update the time cache. */
+    // 更新server里缓存的系统时间戳，每次serverCron都更新一次
     updateCachedTime(1);
 
     server.hz = server.config_hz;
     /* Adapt the server.hz value to the number of configured clients. If we have
      * many clients, we want to call serverCron() with an higher frequency. */
+    // 使 server.hz的值适配配置的client数量，如果有很多个client，则需把serverCron的调用频率调高，也即调整server.hz的值
     if (server.dynamic_hz) {
-        while (listLength(server.clients) / server.hz >
-               MAX_CLIENTS_PER_CLOCK_TICK)
+        while (listLength(server.clients) / server.hz > MAX_CLIENTS_PER_CLOCK_TICK)
         {
             server.hz *= 2;
             if (server.hz > CONFIG_MAX_HZ) {
@@ -1185,16 +1199,15 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     /* for debug purposes: skip actual cron work if pause_cron is on */
     if (server.pause_cron) return 1000/server.hz;
 
-    run_with_period(100) {
+    run_with_period(100) {//serverCron每被调用100次才跑一次
+        //更新/收集 命令执行次数，网络输入输出字节数 等指标数据
         long long stat_net_input_bytes, stat_net_output_bytes;
         atomicGet(server.stat_net_input_bytes, stat_net_input_bytes);
         atomicGet(server.stat_net_output_bytes, stat_net_output_bytes);
 
         trackInstantaneousMetric(STATS_METRIC_COMMAND,server.stat_numcommands);
-        trackInstantaneousMetric(STATS_METRIC_NET_INPUT,
-                stat_net_input_bytes);
-        trackInstantaneousMetric(STATS_METRIC_NET_OUTPUT,
-                stat_net_output_bytes);
+        trackInstantaneousMetric(STATS_METRIC_NET_INPUT,stat_net_input_bytes);
+        trackInstantaneousMetric(STATS_METRIC_NET_OUTPUT,stat_net_output_bytes);
     }
 
     /* We have just LRU_BITS bits per object for LRU information.
@@ -1208,13 +1221,15 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
      *
      * Note that you can change the resolution altering the
      * LRU_CLOCK_RESOLUTION define. */
+    //更新LRU的clock，用于淘汰key
     unsigned int lruclock = getLRUClock();
     atomicSet(server.lruclock,lruclock);
 
-    cronUpdateMemoryStats();
+    cronUpdateMemoryStats();// 更新/收集 各种内存指标数据
 
     /* We received a SIGTERM or SIGINT, shutting down here in a safe way, as it is
      * not ok doing so inside the signal handler. */
+    // 关机逻辑
     if (server.shutdown_asap && !isShutdownInitiated()) {
         int shutdownFlags = SHUTDOWN_NOFLAGS;
         if (server.last_sig_received == SIGINT && server.shutdown_on_sigint)
@@ -1227,12 +1242,13 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         if (server.mstime >= server.shutdown_mstime || isReadyToShutdown()) {
             if (finishShutdown() == C_OK) exit(0);
             /* Shutdown failed. Continue running. An error has been logged. */
+            //关机失败，继续执行，导致关机失败的错误会被记录到日志
         }
     }
 
     /* Show some info about non-empty databases */
     if (server.verbosity <= LL_VERBOSE) {
-        run_with_period(5000) {
+        run_with_period(5000) {//serverCron每被调用5000次才跑一次
             for (j = 0; j < server.dbnum; j++) {
                 long long size, used, vkeys;
 
@@ -1247,8 +1263,9 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     /* Show information about connected clients */
+    // 记录已连接client的信息
     if (!server.sentinel_mode) {
-        run_with_period(5000) {
+        run_with_period(5000) {//serverCron每被调用5000次才跑一次
             serverLog(LL_DEBUG,
                 "%lu clients connected (%lu replicas), %zu bytes in use",
                 listLength(server.clients)-listLength(server.slaves),
@@ -1258,28 +1275,27 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     /* We need to do a few operations on clients asynchronously. */
+    // 需要给client做一些异步操作，比如关闭一些连接超时的client
     clientsCron();
 
     /* Handle background operations on Redis databases. */
-    databasesCron();
+    databasesCron();// 本函数处理 redis 数据库里，需要在后台渐进式执行的操作，例如key的过期，扩容，rehash等
 
     /* Start a scheduled AOF rewrite if this was requested by the user while
      * a BGSAVE was in progress. */
-    if (!hasActiveChildProcess() &&
-        server.aof_rewrite_scheduled &&
-        !aofRewriteLimited())
-    {
+    if (!hasActiveChildProcess() && server.aof_rewrite_scheduled && !aofRewriteLimited()) {
         rewriteAppendOnlyFileBackground();
     }
 
     /* Check if a background saving or AOF rewrite in progress terminated. */
-    if (hasActiveChildProcess() || ldbPendingChildren())
-    {
-        run_with_period(1000) receiveChildInfo();
+    // 检查正在进行的 RDB 或 AOF重写 是否正常
+    if (hasActiveChildProcess() || ldbPendingChildren()) {
+        run_with_period(1000) receiveChildInfo();//接收子进程的信息数据
         checkChildrenDone();
     } else {
         /* If there is not a background saving/rewrite in progress check if
          * we have to save/rewrite now. */
+        // 若没有RDB 或 AOF重写在进行，则判断是否启动它们
         for (j = 0; j < server.saveparamslen; j++) {
             struct saveparam *sp = server.saveparams+j;
 
@@ -1303,23 +1319,27 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         }
 
         /* Trigger an AOF rewrite if needed. */
-        if (server.aof_state == AOF_ON &&
-            !hasActiveChildProcess() &&
+        // 判断是否要启动AOF重写
+        if (server.aof_state == AOF_ON &&//重写开关
+            !hasActiveChildProcess() &&//后台没有正在处理的任务
             server.aof_rewrite_perc &&
-            server.aof_current_size > server.aof_rewrite_min_size)
+            server.aof_current_size > server.aof_rewrite_min_size)//AOF文件当前大小 大于 阈值
         {
             long long base = server.aof_rewrite_base_size ?
                 server.aof_rewrite_base_size : 1;
-            long long growth = (server.aof_current_size*100/base) - 100;
+            long long growth = (server.aof_current_size*100/base) - 100;//AOF文件的增长率
+
+            //是否启动AOF重写判断
             if (growth >= server.aof_rewrite_perc && !aofRewriteLimited()) {
                 serverLog(LL_NOTICE,"Starting automatic rewriting of AOF on %lld%% growth",growth);
-                rewriteAppendOnlyFileBackground();
+                rewriteAppendOnlyFileBackground();//启动AOF重写
             }
         }
     }
     /* Just for the sake of defensive programming, to avoid forgetting to
      * call this function when needed. */
-    updateDictResizePolicy();
+    // 防御性编程，以免在需要时却忘记调用该函数
+    updateDictResizePolicy();//是否启动字典的resize
 
 
     /* AOF postponed flush: Try at every cron cycle if the slow fsync
@@ -1327,7 +1347,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     if ((server.aof_state == AOF_ON || server.aof_state == AOF_WAIT_REWRITE) &&
         server.aof_flush_postponed_start)
     {
-        flushAppendOnlyFile(0);
+        flushAppendOnlyFile(0);//AOF文件刷盘
     }
 
     /* AOF write errors: in this case we have a buffer to flush as well and
@@ -2231,14 +2251,15 @@ void closeSocketListeners(socketFds *sfd) {
     sfd->count = 0;
 }
 
-/* 创建一个事件处理器来接受新的TCP或TLS连接，对全部fd来说都是原子性的
- * This works atomically for all socket fds */
+/* 原子创建accept文件事件handler来处理新的TCP或TLS连接请求，本质是把fd添加到底层的epoll里*/
 int createSocketAcceptHandler(socketFds *sfd, aeFileProc *accept_handler) {
     int j;
 
     for (j = 0; j < sfd->count; j++) {
+        //对sfd->count个监听fd创建accept文件事件并注册入事件循环server.el里（底层调用epoll_ct（EPOLL_CTL_ADD）），当accept有事件发生时，调用accept_handler处理
         if (aeCreateFileEvent(server.el, sfd->fd[j], AE_READABLE, accept_handler,NULL) == AE_ERR) {
             /* Rollback */
+            //accept文件事件创建失败，则从事件循环server.el里移除该文件事件（底层调用epoll_ct（EPOLL_CTL_DEL））
             for (j = j-1; j >= 0; j--) aeDeleteFileEvent(server.el, sfd->fd[j], AE_READABLE);
             return C_ERR;
         }
@@ -2263,23 +2284,28 @@ int createSocketAcceptHandler(socketFds *sfd, aeFileProc *accept_handler) {
  * error, at least one of the server.bindaddr addresses was
  * impossible to bind, or no bind addresses were specified in the server
  * configuration but the function is not able to bind * for at least
- * one of the IPv4 or IPv6 protocols. */
+ * one of the IPv4 or IPv6 protocols.
+ *
+ * 初始化并建立一批fd的tcp监听
+ *
+ * */
 int listenToPort(int port, socketFds *sfd) {
     int j;
     char **bindaddr = server.bindaddr;
 
     /* If we have no bind address, we don't listen on a TCP socket */
+    // 如果没有绑定的地址，则不用进行TCP监听
     if (server.bindaddr_count == 0) return C_OK;
-
+    //建立多个监听
     for (j = 0; j < server.bindaddr_count; j++) {
         char* addr = bindaddr[j];
         int optional = *addr == '-';
         if (optional) addr++;
-        if (strchr(addr,':')) {
-            /* Bind IPv6 address. */
+        if (strchr(addr,':')) {//若地址含有：符号，则是ipv6
+            /* 建立ipv6 tcp监听 */
             sfd->fd[sfd->count] = anetTcp6Server(server.neterr,port,addr,server.tcp_backlog);
         } else {
-            /* Bind IPv4 address. */
+            /* 建立ipv4 tcp监听 */
             sfd->fd[sfd->count] = anetTcpServer(server.neterr,port,addr,server.tcp_backlog);
         }
         if (sfd->fd[sfd->count] == ANET_ERR) {
@@ -2298,8 +2324,8 @@ int listenToPort(int port, socketFds *sfd) {
             closeSocketListeners(sfd);
             return C_ERR;
         }
-        if (server.socket_mark_id > 0) anetSetSockMarkId(NULL, sfd->fd[sfd->count], server.socket_mark_id);
-        anetNonBlock(NULL,sfd->fd[sfd->count]);
+        if (server.socket_mark_id > 0) anetSetSockMarkId(NULL, sfd->fd[sfd->count], server.socket_mark_id);//anetSetSockMarkId作用？ todo
+        anetNonBlock(NULL,sfd->fd[sfd->count]);//把监听fd设置为非阻塞
         anetCloexec(sfd->fd[sfd->count]);
         sfd->count++;
     }
@@ -2439,34 +2465,31 @@ void initServer(void) {
     adjustOpenFilesLimit();
     const char *clk_msg = monotonicInit();
     serverLog(LL_NOTICE, "monotonic clock: %s", clk_msg);
-    server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);
-    if (server.el == NULL) {
-        serverLog(LL_WARNING,
-            "Failed creating the event loop. Error message: '%s'",
-            strerror(errno));
+    server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);//创建 事件循环 实例
+    if (server.el == NULL) {//当无法创建 事件循环 实例时 报错&退出
+        serverLog(LL_WARNING, "Failed creating the event loop. Error message: '%s'", strerror(errno));
         exit(1);
     }
-    server.db = zmalloc(sizeof(redisDb)*server.dbnum);
+    server.db = zmalloc(sizeof(redisDb)*server.dbnum);//为数据库数组分配空间
 
     /* Open the TCP listening socket for the user commands. */
-    if (server.port != 0 &&
-        listenToPort(server.port,&server.ipfd) == C_ERR) {
+    // 初始化并建立一批fd的tcp监听
+    if (server.port != 0 && listenToPort(server.port,&server.ipfd) == C_ERR) {
         /* Note: the following log text is matched by the test suite. */
         serverLog(LL_WARNING, "Failed listening on port %u (TCP), aborting.", server.port);
         exit(1);
     }
-    if (server.tls_port != 0 &&
-        listenToPort(server.tls_port,&server.tlsfd) == C_ERR) {
+    //初始化并建立一批fd的tcp监听（tls）
+    if (server.tls_port != 0 && listenToPort(server.tls_port,&server.tlsfd) == C_ERR) {
         /* Note: the following log text is matched by the test suite. */
         serverLog(LL_WARNING, "Failed listening on port %u (TLS), aborting.", server.tls_port);
         exit(1);
     }
 
-    /* Open the listening Unix domain socket. */
+    /* 建立unix监听 Open the listening Unix domain socket. */
     if (server.unixsocket != NULL) {
         unlink(server.unixsocket); /* don't care if this fails */
-        server.sofd = anetUnixServer(server.neterr,server.unixsocket,
-            (mode_t)server.unixsocketperm, server.tcp_backlog);
+        server.sofd = anetUnixServer(server.neterr,server.unixsocket,(mode_t)server.unixsocketperm, server.tcp_backlog);//建立unix监听
         if (server.sofd == ANET_ERR) {
             serverLog(LL_WARNING, "Failed opening Unix socket: %s", server.neterr);
             exit(1);
@@ -2476,21 +2499,24 @@ void initServer(void) {
     }
 
     /* Abort if there are no listening sockets at all. */
+    // 如果没有tcp、tcp（ssl）、unix的监听fd，则退出
     if (server.ipfd.count == 0 && server.tlsfd.count == 0 && server.sofd < 0) {
         serverLog(LL_WARNING, "Configured to not listen anywhere, exiting.");
         exit(1);
     }
 
     /* Create the Redis databases, and initialize other internal state. */
+    // 创建redis 数据库，并初始化
     for (j = 0; j < server.dbnum; j++) {
-        server.db[j].dict = dictCreate(&dbDictType);
+        //dictCreate(字典方法的不同实现)
+        server.db[j].dict = dictCreate(&dbDictType);//每一个db都是一个dict字典实例，key是sds类型的字符串，val是redis Object
         server.db[j].expires = dictCreate(&dbExpiresDictType);
         server.db[j].expires_cursor = 0;
         server.db[j].blocking_keys = dictCreate(&keylistDictType);
         server.db[j].ready_keys = dictCreate(&objectKeyPointerValueDictType);
         server.db[j].watched_keys = dictCreate(&keylistDictType);
-        server.db[j].id = j;
-        server.db[j].avg_ttl = 0;
+        server.db[j].id = j;//数据库标识
+        server.db[j].avg_ttl = 0;//平均ttl，用于统计
         server.db[j].defrag_later = listCreate();
         server.db[j].slots_to_keys = NULL; /* Set by clusterInit later on if necessary. */
         listSetFreeMethod(server.db[j].defrag_later,(void (*)(void*))sdsfree);
@@ -2555,34 +2581,35 @@ void initServer(void) {
     server.repl_good_slaves_count = 0;
     server.last_sig_received = 0;
 
-    /* 创建timer回调，这是我们渐进地处理 各种后台操作 的方式，如客户端的超时，清理不访问的过期key等 */
+    /********* 以下是把各种（定时）时间事件，文件事件，等注册到事件循环里，本质是添加到底层的epoll里 ***********/
+    /* 创建timer定时时间事件，这是我们渐进地处理 各种后台操作 的方式，如客户端的超时，清理不访问的过期key等 */
     if (aeCreateTimeEvent(server.el, 1, serverCron, NULL, NULL) == AE_ERR) {
         serverPanic("Can't create event loop timers.");
         exit(1);
     }
 
-    /* Create an event handler for accepting new connections in TCP and Unix
-     * domain sockets. */
-    if (createSocketAcceptHandler(&server.ipfd, acceptTcpHandler) != C_OK) {
+    /* 创建 accept 新的tcp或unix连接的事件处理函数，当accept有事件时，则调用该函数处理 */
+    if (createSocketAcceptHandler(&server.ipfd, acceptTcpHandler) != C_OK) {//原子创建accept文件事件handler来处理新的TCP或TLS连接请求，本质是把fd添加到底层的epoll里
         serverPanic("Unrecoverable error creating TCP socket accept handler.");
     }
+    /* 创建 accept 新的tcp（tls）连接的事件处理函数，当accept有事件时，则调用该函数处理 */
     if (createSocketAcceptHandler(&server.tlsfd, acceptTLSHandler) != C_OK) {
         serverPanic("Unrecoverable error creating TLS socket accept handler.");
     }
-    if (server.sofd > 0 && aeCreateFileEvent(server.el,server.sofd,AE_READABLE,
-        acceptUnixHandler,NULL) == AE_ERR) serverPanic("Unrecoverable error creating server.sofd file event.");
+    //同上
+    if (server.sofd > 0 && aeCreateFileEvent(server.el,server.sofd,AE_READABLE,acceptUnixHandler,NULL) == AE_ERR) serverPanic("Unrecoverable error creating server.sofd file event.");
 
 
     /* Register a readable event for the pipe used to awake the event loop
      * from module threads. */
-    if (aeCreateFileEvent(server.el, server.module_pipe[0], AE_READABLE,
-        modulePipeReadable,NULL) == AE_ERR) {
-            serverPanic(
-                "Error registering the readable event for the module pipe.");
+    // 注册一个拥有可读事件的pipe管道到事件循环server.el里，以便后续可唤醒被阻塞的事件循环
+    if (aeCreateFileEvent(server.el, server.module_pipe[0], AE_READABLE,modulePipeReadable,NULL) == AE_ERR) {
+            serverPanic("Error registering the readable event for the module pipe.");
     }
 
     /* Register before and after sleep handlers (note this needs to be done
      * before loading persistence since it is used by processEventsWhileBlocked. */
+    // 注册事件循环的睡眠前后回调函数
     aeSetBeforeSleepProc(server.el,beforeSleep);
     aeSetAfterSleepProc(server.el,afterSleep);
 
@@ -2590,22 +2617,23 @@ void initServer(void) {
      * no explicit limit in the user provided configuration we set a limit
      * at 3 GB using maxmemory with 'noeviction' policy'. This avoids
      * useless crashes of the Redis instance for out of memory. */
+    // 32位系统的最大内存空间是4G，当配置文件里没写明maxmemory时，则默认把maxmemory设位3，且不设内存淘汰，也即内存满了后不会淘汰key，此时无法再写入任何数据
     if (server.arch_bits == 32 && server.maxmemory == 0) {
         serverLog(LL_WARNING,"Warning: 32 bit instance detected but no memory limit set. Setting 3 GB maxmemory limit with 'noeviction' policy now.");
         server.maxmemory = 3072LL*(1024*1024); /* 3 GB */
-        server.maxmemory_policy = MAXMEMORY_NO_EVICTION;
+        server.maxmemory_policy = MAXMEMORY_NO_EVICTION;//不设淘汰策略
     }
 
-    if (server.cluster_enabled) clusterInit();
-    scriptingInit(1);
-    functionsInit();
-    slowlogInit();
+    if (server.cluster_enabled) clusterInit();//若开启了集群模式，则初始化集群
+    scriptingInit(1);//初始化lua脚本运行环境
+    functionsInit();//初始化引擎如lua引擎
+    slowlogInit();//初始化慢日志
     latencyMonitorInit();
 
     /* Initialize ACL default password if it exists */
     ACLUpdateDefaultUserPassword(server.requirepass);
 
-    applyWatchdogPeriod();
+    applyWatchdogPeriod();//设置定时器
 }
 
 /* Some steps in server initialization need to be done last (after modules
@@ -3963,7 +3991,14 @@ void closeListeningSockets(int unlink_unix_socket) {
  * returned and an error is logged. If the flag SHUTDOWN_FORCE is set, these
  * errors are logged but ignored and C_OK is returned.
  *
- * On success, this function returns C_OK and then it's OK to call exit(0). */
+ * On success, this function returns C_OK and then it's OK to call exit(0).
+ *
+ * 准备关机， flags有如下值：
+ * SHUTDOWN_SAVE：保存数据rdb文件后关闭，（即便server没有开启rdb开关）
+ * SHUTDOWN_NOSAVE：不保存任何rdb文件，即便server开启了rdb开关
+ * SHUTDOWN_NOW：立即关机，无需等待其他从节点的数据同步。若不设该值，则在关机时，若其他从节点数据未同步完成，则返回错误C_ERR，同时server.shutdown_mstime设为等待从节点同步完成所需的时间
+ * SHUTDOWN_FORCE：无视AOF 或 RDB 文件写入磁盘的错误（这两会阻止关机）
+ * */
 int prepareForShutdown(int flags) {
     if (isShutdownInitiated()) return C_ERR;
 
@@ -4046,6 +4081,7 @@ int abortShutdown(void) {
 /* The final step of the shutdown sequence. Returns C_OK if the shutdown
  * sequence was successful and it's OK to call exit(). If C_ERR is returned,
  * it's not safe to call exit(). */
+// 关机步骤里的最后一步，如果返回C_OK，则可以调用exit()安全退出了
 int finishShutdown(void) {
 
     int save = server.shutdown_flags & SHUTDOWN_SAVE;

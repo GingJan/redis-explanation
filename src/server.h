@@ -152,9 +152,9 @@ typedef long long ustime_t; /* microsecond time type. */
 
 /* Instantaneous metrics tracking. */
 #define STATS_METRIC_SAMPLES 16     /* Number of samples per metric. */
-#define STATS_METRIC_COMMAND 0      /* Number of commands executed. */
-#define STATS_METRIC_NET_INPUT 1    /* Bytes read to network .*/
-#define STATS_METRIC_NET_OUTPUT 2   /* Bytes written to network. */
+#define STATS_METRIC_COMMAND 0      /* 已执行命令的个数 Number of commands executed. */
+#define STATS_METRIC_NET_INPUT 1    /* 从网络读取的字节数 Bytes read to network .*/
+#define STATS_METRIC_NET_OUTPUT 2   /* 写到网络的字节数Bytes written to network. */
 #define STATS_METRIC_COUNT 3
 
 /* Protocol and I/O related defines */
@@ -469,7 +469,7 @@ typedef enum {
 #define SUPERVISED_UPSTART 3
 
 /* Anti-warning macro... */
-#define UNUSED(V) ((void) V)
+#define UNUSED(V) ((void) V)//不会用到的变量都这样处理，避免警告
 
 #define ZSKIPLIST_MAXLEVEL 32 /* Should be enough for 2^64 elements */
 #define ZSKIPLIST_P 0.25      /* Skiplist P = 1/4 */
@@ -609,6 +609,7 @@ typedef enum {
 /* Using the following macro you can run code inside serverCron() with the
  * specified period, specified in milliseconds.
  * The actual resolution depends on server.hz. */
+//serverCron每被调用_ms_次才跑一次
 #define run_with_period(_ms_) if ((_ms_ <= 1000/server.hz) || !(server.cronloops%((_ms_)/(1000/server.hz))))
 
 /* We can print the stacktrace, so our assert is defined this way: */
@@ -920,7 +921,7 @@ typedef struct redisDb {
     long long avg_ttl;          /* Average TTL, just for stats */
     unsigned long expires_cursor; /* Cursor of the active expire cycle. */
     list *defrag_later;         /* List of key names to attempt to defrag one by one, gradually. */
-    clusterSlotToKeyMapping *slots_to_keys; /* Array of slots to keys. Only used in cluster mode (db 0). */
+    clusterSlotToKeyMapping *slots_to_keys; /* slot槽到key的映射 Array of slots to keys. Only used in cluster mode (db 0). */
 } redisDb;
 
 /* forward declaration for functions ctx */
@@ -1452,12 +1453,12 @@ struct redisServer {
                                    the actual 'hz' field value if dynamic-hz
                                    is enabled. */
     mode_t umask;               /* The umask value of the process on startup */
-    int hz;                     /* serverCron() calls frequency in hertz */
-    int in_fork_child;          /* indication that this is a fork child */
+    int hz;                     /* serverCron() calls frequency in hertz  serverCron()的调度频率，hz越大，serverCron调度越频繁？ */
+    int in_fork_child;          /* indication that this is a fork child 当前进程是否fork出来的子进程*/
     redisDb *db;                /* 一个数组，存放所有数据库 */
     dict *commands;             /* Command table */
     dict *orig_commands;        /* Command table before command renaming. */
-    aeEventLoop *el;
+    aeEventLoop *el;            /* 事件循环实例 */
     rax *errors;                /* Errors table */
     redisAtomic unsigned int lruclock; /* Clock for LRU eviction */
     volatile sig_atomic_t shutdown_asap; /* Shutdown ordered by signal handler. */
@@ -1468,7 +1469,7 @@ struct redisServer {
     int active_defrag_running;  /* Active defragmentation running (holds current scan aggressiveness) */
     char *pidfile;              /* PID file path */
     int arch_bits;              /* 32 or 64 depending on sizeof(long) */
-    int cronloops;              /* Number of times the cron function run */
+    int cronloops;              /* serverCron函数的执行次数 Number of times the cron function run */
     char runid[CONFIG_RUN_ID_SIZE+1];  /* ID always different at every exec. */
     int sentinel_mode;          /* True if this instance is a Sentinel. */
     size_t initial_memory_usage; /* Bytes used after initialization. */
@@ -1497,7 +1498,7 @@ struct redisServer {
     int port;                   /* TCP listening port */
     int tls_port;               /* TLS listening port */
     int tcp_backlog;            /* TCP listen() backlog */
-    char *bindaddr[CONFIG_BINDADDR_MAX]; /* Addresses we should bind to */
+    char *bindaddr[CONFIG_BINDADDR_MAX]; /* 监听/绑定的地址 */
     int bindaddr_count;         /* Number of addresses in server.bindaddr[] */
     char *bind_source_addr;     /* Source address to bind on for outgoing connections */
     char *unixsocket;           /* UNIX socket path */
@@ -1546,8 +1547,8 @@ struct redisServer {
     time_t loading_start_time;
     off_t loading_process_events_interval_bytes;
     /* Fields used only for stats */
-    time_t stat_starttime;          /* Server start time */
-    long long stat_numcommands;     /* Number of processed commands */
+    time_t stat_starttime;          /* 服务器启动时间 Server start time */
+    long long stat_numcommands;     /* 已处理命令的个数 Number of processed commands */
     long long stat_numconnections;  /* Number of connections received */
     long long stat_expiredkeys;     /* Number of expired keys */
     double stat_expired_stale_perc; /* Percentage of keys probably expired */
@@ -1582,8 +1583,8 @@ struct redisServer {
     long long slowlog_log_slower_than; /* SLOWLOG time limit (to get logged) */
     unsigned long slowlog_max_len;     /* SLOWLOG max number of items logged */
     struct malloc_stats cron_malloc_stats; /* sampled in serverCron(). */
-    redisAtomic long long stat_net_input_bytes; /* Bytes read from network. */
-    redisAtomic long long stat_net_output_bytes; /* Bytes written to network. */
+    redisAtomic long long stat_net_input_bytes; /* 从网络读取的字节数 Bytes read from network. */
+    redisAtomic long long stat_net_output_bytes; /* 写到网络的字节数 Bytes written to network. */
     size_t stat_current_cow_peak;   /* Peak size of copy on write bytes. */
     size_t stat_current_cow_bytes;  /* Copy on write bytes while child is active. */
     monotime stat_current_cow_updated;  /* Last update time of stat_current_cow_bytes */
@@ -1648,7 +1649,7 @@ struct redisServer {
     char *aof_filename;             /* Basename of the AOF file and manifest file */
     char *aof_dirname;              /* Name of the AOF directory */
     int aof_no_fsync_on_rewrite;    /* Don't fsync if a rewrite is in prog. */
-    int aof_rewrite_perc;           /* Rewrite AOF if % growth is > M and... */
+    int aof_rewrite_perc;           /* 变化的百分比>M时，则启动重写... Rewrite AOF if % growth is > M and... */
     off_t aof_rewrite_min_size;     /* the AOF file is at least N bytes. */
     off_t aof_rewrite_base_size;    /* AOF size on latest startup or rewrite. */
     off_t aof_current_size;         /* AOF current size (Including BASE + INCRs). */
@@ -1799,11 +1800,11 @@ struct redisServer {
     list *clients_waiting_acks;         /* Clients waiting in WAIT command. */
     int get_ack_from_slaves;            /* If true we send REPLCONF GETACK. */
     /* Limits */
-    unsigned int maxclients;            /* Max number of simultaneous clients */
-    unsigned long long maxmemory;   /* Max number of memory bytes to use */
-    ssize_t maxmemory_clients;       /* Memory limit for total client buffers */
-    int maxmemory_policy;           /* Policy for key eviction */
-    int maxmemory_samples;          /* Precision of random sampling */
+    unsigned int maxclients;            /* 同时连接的client数量  */
+    unsigned long long maxmemory;   /* 最大可用字节数 Max number of memory bytes to use */
+    ssize_t maxmemory_clients;       /* 客户端缓冲区的内存限制 Memory limit for total client buffers */
+    int maxmemory_policy;           /* key的淘汰策略 */
+    int maxmemory_samples;          /* 随机抽样精度 Precision of random sampling */
     int maxmemory_eviction_tenacity;/* Aggressiveness of eviction processing */
     int lfu_log_factor;             /* LFU logarithmic counter factor. */
     int lfu_decay_time;             /* LFU counter decay factor. */
@@ -1839,11 +1840,11 @@ struct redisServer {
     int list_max_listpack_size;
     int list_compress_depth;
     /* time cache */
-    redisAtomic time_t unixtime; /* Unix time sampled every cron cycle. */
+    redisAtomic time_t unixtime; /* 每个cron周期采样的unix时间 Unix time sampled every cron cycle. */
     time_t timezone;            /* Cached timezone. As set by tzset(). */
-    int daylight_active;        /* Currently in daylight saving time. */
-    mstime_t mstime;            /* 'unixtime' in milliseconds. */
-    ustime_t ustime;            /* 'unixtime' in microseconds. */
+    int daylight_active;        /* Currently in daylight saving time，夏令时. */
+    mstime_t mstime;            /* 'unixtime' in milliseconds. unix时间戳（毫秒） */
+    ustime_t ustime;            /* 'unixtime' in microseconds. unix时间戳（微秒）*/
     size_t blocking_op_nesting; /* Nesting level of blocking operation, used to reset blocked_last_cron. */
     long long blocked_last_cron; /* Indicate the mstime of the last time we did cron jobs from a blocking operation */
     /* Pubsub */
@@ -1903,7 +1904,7 @@ struct redisServer {
                                      backward compatibility with Redis <= 5. */
     int acl_pubsub_default;      /* Default ACL pub/sub channels flag */
     /* Assert & bug reporting */
-    int watchdog_period;  /* Software watchdog period in ms. 0 = off */
+    int watchdog_period;  /* 定时器的步长，当为0时则关闭定时器 Software watchdog period in ms. 0 = off */
     /* System hardware info */
     size_t system_memory_size;  /* Total memory in system as reported by OS */
     /* TLS Configuration */

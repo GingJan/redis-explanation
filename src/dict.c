@@ -104,9 +104,9 @@ static void _dictReset(dict *d, int htidx)
 /* Create a new hash table */
 dict *dictCreate(dictType *type)
 {
-    dict *d = zmalloc(sizeof(*d));
+    dict *d = zmalloc(sizeof(*d));//分配空间
 
-    _dictInit(d,type);
+    _dictInit(d,type);//初始化字典
     return d;
 }
 
@@ -1062,7 +1062,7 @@ void dictEmpty(dict *d, void(callback)(dict*)) {
     d->rehashidx = -1;
     d->pauserehash = 0;
 }
-
+//启动字典的resize
 void dictEnableResize(void) {
     dict_can_resize = 1;
 }

@@ -694,6 +694,7 @@ int ld2string(char *buf, size_t len, long double value, ld2string_mode mode) {
  * stream. However if /dev/urandom is not available, a weaker seed is used.
  *
  * This function is not thread safe, since the state is global. */
+// 生成len个字节的随机数据到p里
 void getRandomBytes(unsigned char *p, size_t len) {
     /* Global state. */
     static int seed_initialized = 0;

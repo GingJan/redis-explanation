@@ -67,7 +67,7 @@ static int _dictInit(dict *d, dictType *type);
 
 /* -------------------------- hash functions -------------------------------- */
 
-static uint8_t dict_hash_function_seed[16];
+static uint8_t dict_hash_function_seed[16];//存着16个随机seed
 
 void dictSetHashFunctionSeed(uint8_t *seed) {
     memcpy(dict_hash_function_seed,seed,sizeof(dict_hash_function_seed));

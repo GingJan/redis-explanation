@@ -676,6 +676,7 @@ void loadServerConfig(char *filename, char config_from_stdin, char *options) {
     }
 
     /* Append content from stdin */
+    // 把标准输入的数据追加到 config
     if (config_from_stdin) {
         serverLog(LL_WARNING,"Reading config from stdin");
         fp = stdin;

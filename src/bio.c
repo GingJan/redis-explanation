@@ -62,7 +62,7 @@
 #include "bio.h"
 
 static pthread_t bio_threads[BIO_NUM_OPS];
-static pthread_mutex_t bio_mutex[BIO_NUM_OPS];
+static pthread_mutex_t bio_mutex[BIO_NUM_OPS];//互斥锁
 static pthread_cond_t bio_newjob_cond[BIO_NUM_OPS];
 static pthread_cond_t bio_step_cond[BIO_NUM_OPS];
 static list *bio_jobs[BIO_NUM_OPS];
@@ -90,6 +90,7 @@ void *bioProcessBackgroundJobs(void *arg);
 #define REDIS_THREAD_STACK_SIZE (1024*1024*4)
 
 /* Initialize the background system, spawning the thread. */
+// 初始化后台系统，创建对应线程
 void bioInit(void) {
     pthread_attr_t attr;
     pthread_t thread;
@@ -98,7 +99,7 @@ void bioInit(void) {
 
     /* Initialization of state vars and objects */
     for (j = 0; j < BIO_NUM_OPS; j++) {
-        pthread_mutex_init(&bio_mutex[j],NULL);
+        pthread_mutex_init(&bio_mutex[j],NULL);//初始化一个互斥锁
         pthread_cond_init(&bio_newjob_cond[j],NULL);
         pthread_cond_init(&bio_step_cond[j],NULL);
         bio_jobs[j] = listCreate();

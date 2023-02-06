@@ -119,7 +119,7 @@ typedef long long ustime_t; /* microsecond time type. */
 #define CONFIG_BGSAVE_RETRY_DELAY 5 /* Wait a few secs before trying again. */
 #define CONFIG_DEFAULT_PID_FILE "/var/run/redis.pid"
 #define CONFIG_DEFAULT_BINDADDR_COUNT 2
-#define CONFIG_DEFAULT_BINDADDR { "*", "-::*" }
+#define CONFIG_DEFAULT_BINDADDR { "*", "-::*" }//默认的监听地址
 #define NET_HOST_STR_LEN 256 /* Longest valid hostname */
 #define NET_IP_STR_LEN 46 /* INET6_ADDRSTRLEN is 46, but we need to be sure */
 #define NET_ADDR_STR_LEN (NET_IP_STR_LEN+32) /* Must be enough for ip:port */
@@ -844,13 +844,13 @@ typedef struct RedisModuleDigest {
 #define OBJ_STATIC_REFCOUNT (INT_MAX-1) /* Object allocated in the stack. */
 #define OBJ_FIRST_SPECIAL_REFCOUNT OBJ_STATIC_REFCOUNT
 typedef struct redisObject {
-    unsigned type:4;
-    unsigned encoding:4;
+    unsigned type:4;//只用4位，redis数据类型 字符串OBJ_STRING，列表，Hash，集合等
+    unsigned encoding:4;//redis类型的实现方式，有sds、ziplist、skiplist、dict等
     unsigned lru:LRU_BITS; /* LRU time (relative to global lru_clock) or
                             * LFU data (least significant 8 bits frequency
                             * and most significant 16 bits access time). */
-    int refcount;
-    void *ptr;
+    int refcount;//该redisObj实例被引用的次数，共享实例节约内存
+    void *ptr;//指向的数据
 } robj;
 
 /* The a string name for an object's type as listed above
@@ -1463,7 +1463,7 @@ struct redisServer {
     redisAtomic unsigned int lruclock; /* Clock for LRU eviction */
     volatile sig_atomic_t shutdown_asap; /* Shutdown ordered by signal handler. */
     mstime_t shutdown_mstime;   /* Timestamp to limit graceful shutdown. */
-    int last_sig_received;      /* Indicates the last SIGNAL received, if any (e.g., SIGINT or SIGTERM). */
+    int last_sig_received;      /* 最后收到的信号 Indicates the last SIGNAL received, if any (e.g., SIGINT or SIGTERM). */
     int shutdown_flags;         /* Flags passed to prepareForShutdown(). */
     int activerehashing;        /* Incremental rehash in serverCron() */
     int active_defrag_running;  /* Active defragmentation running (holds current scan aggressiveness) */
@@ -1472,7 +1472,7 @@ struct redisServer {
     int cronloops;              /* serverCron函数的执行次数 Number of times the cron function run */
     char runid[CONFIG_RUN_ID_SIZE+1];  /* ID always different at every exec. */
     int sentinel_mode;          /* True if this instance is a Sentinel. */
-    size_t initial_memory_usage; /* Bytes used after initialization. */
+    size_t initial_memory_usage; /* 初始化后已用的内存字节数 Bytes used after initialization. */
     int always_show_logo;       /* Show logo even for non-stdout logging. */
     int in_script;              /* Are we inside EVAL? */
     int in_exec;                /* Are we inside EXEC? */
@@ -1539,8 +1539,8 @@ struct redisServer {
     int enable_module_cmd;           /* Enable MODULE commands, see PROTECTED_ACTION_ALLOWED_* */
 
     /* RDB / AOF loading information */
-    volatile sig_atomic_t loading; /* We are loading data from disk if true */
-    volatile sig_atomic_t async_loading; /* We are loading data without blocking the db being served */
+    volatile sig_atomic_t loading; /* 当为true，则说明正在从磁盘加载数据 We are loading data from disk if true */
+    volatile sig_atomic_t async_loading; /* 以非阻塞的方式加载数据，server还可以接收外部请求 We are loading data without blocking the db being served */
     off_t loading_total_bytes;
     off_t loading_rdb_used_mem;
     off_t loading_loaded_bytes;

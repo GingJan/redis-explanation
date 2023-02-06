@@ -3948,7 +3948,12 @@ int checkClientPauseTimeoutAndReturnIfPaused(void) {
  * some event was processed, in order to go forward with the accept, read,
  * write, close sequence needed to serve a client.
  *
- * The function returns the total number of events processed. */
+ * The function returns the total number of events processed.
+ *
+ * 当被阻塞在不可中断的操作时，本函数可以从这些阻塞里跳脱出来并处理一些事件
+ * 例如在开机并加载数据时，可通过本函数返回 -LOADING错误给client
+ * 底层调用eventloop来处理事件
+ * */
 void processEventsWhileBlocked(void) {
     int iterations = 4; /* See the function top-comment. */
 
@@ -3964,8 +3969,9 @@ void processEventsWhileBlocked(void) {
      * specifically on a busy script during async_loading rdb, and scripts
      * that came from AOF. */
     ProcessingEventsWhileBlocked++;
-    while (iterations--) {
+    while (iterations--) {//最多尝试iterations次
         long long startval = server.events_processed_while_blocked;
+        //ae_events 本次aeProcessEvents 处理的事件个数，以非阻塞的方式处理文件事件
         long long ae_events = aeProcessEvents(server.el,
             AE_FILE_EVENTS|AE_DONT_WAIT|
             AE_CALL_BEFORE_SLEEP|AE_CALL_AFTER_SLEEP);
@@ -4055,6 +4061,7 @@ void *IOThreadMain(void *myid) {
 }
 
 /* Initialize the data structures needed for threaded I/O. */
+// 初始化 IO线程需要的数据结构
 void initThreadedIO(void) {
     server.io_threads_active = 0; /* We start with threads not active. */
 

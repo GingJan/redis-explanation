@@ -1523,6 +1523,7 @@ static int redis_math_randomseed (lua_State *L) {
 }
 
 /* This is the Lua script "count" hook that we use to detect scripts timeout. */
+// 这是lua脚本的 count 钩子函数，用于探测脚本超时
 static void luaMaskCountHook(lua_State *lua, lua_Debug *ar) {
     UNUSED(ar);
     scriptRunCtx* rctx = luaGetFromRegistry(lua, REGISTRY_RUN_CTX_NAME);

@@ -1501,6 +1501,7 @@ int rdbSaveBackground(int req, char *filename, rdbSaveInfo *rsi) {
  * so we need guarantee all functions we call are async-signal-safe.
  * If we call this function from signal handle, we won't call bg_unlink that
  * is not async-signal-safe. */
+// 删除rdb临时文件
 void rdbRemoveTempFile(pid_t childpid, int from_signal) {
     char tmpfile[256];
     char pid[32];

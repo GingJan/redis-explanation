@@ -377,7 +377,7 @@ size_t dictEntryMetadataSize(dict *d) {
     return server.cluster_enabled ? sizeof(clusterDictEntryMetadata) : 0;
 }
 
-/* Generic hash table type where keys are Redis Objects, Values
+/* 不同数据类型对应字典具体函数的实现 Generic hash table type where keys are Redis Objects, Values
  * dummy pointers. */
 dictType objectKeyPointerValueDictType = {
     dictEncObjHash,            /* hash function */
@@ -1434,7 +1434,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 void blockingOperationStarts() {
     if(!server.blocking_op_nesting++){
         updateCachedTime(0);
-        server.blocked_last_cron = server.mstime;
+        server.blocked_last_cron = server.mstime;//记录下开始处理阻塞任务的时间点
     }
 }
 
@@ -1448,7 +1448,10 @@ void blockingOperationEnds() {
  * also during blocked scripts.
  * It attempts to do its duties at a similar rate as the configured server.hz,
  * and updates cronloops variable so that similarly to serverCron, the
- * run_with_period can be used. */
+ * run_with_period can be used.
+ *
+ * 本函数
+ * */
 void whileBlockedCron() {
     /* Here we may want to perform some cron jobs (normally done server.hz times
      * per second). */
@@ -1963,7 +1966,7 @@ void initServerConfig(void) {
      * redis.conf using the rename-command directive. */
     server.commands = dictCreate(&commandTableDictType);
     server.orig_commands = dictCreate(&commandTableDictType);
-    populateCommandTable();
+    populateCommandTable();//初始化命令表
 
     /* Debugging */
     server.watchdog_period = 0;
@@ -2400,8 +2403,8 @@ void makeThreadKillable(void) {
 void initServer(void) {
     int j;
 
-    signal(SIGHUP, SIG_IGN);//忽略信号
-    signal(SIGPIPE, SIG_IGN);//忽悠信号
+    signal(SIGHUP, SIG_IGN);//忽略SIGHUP信号
+    signal(SIGPIPE, SIG_IGN);//忽悠SIGPIPE信号
     setupSignalHandlers();//设置信号处理函数
     makeThreadKillable();
 
@@ -2641,9 +2644,10 @@ void initServer(void) {
  * Specifically, creation of threads due to a race bug in ld.so, in which
  * Thread Local Storage initialization collides with dlopen call.
  * see: https://sourceware.org/bugzilla/show_bug.cgi?id=19329 */
+// 执行一些需要 加载了模块之后 才能进行初始化的对象 的初始化逻辑
 void InitServerLast() {
-    bioInit();
-    initThreadedIO();
+    bioInit();//初始化后台系统，创建对应后台线程
+    initThreadedIO();// 初始化 IO线程需要的数据结构
     set_jemalloc_bg_thread(server.jemalloc_bg_thread);
     server.initial_memory_usage = zmalloc_used_memory();
 }
@@ -2824,6 +2828,7 @@ extern struct redisCommand redisCommandTable[];
 
 /* Populates the Redis Command Table dict from from the static table in commands.c
  * which is auto generated from the json files in the commands folder. */
+// 初始化Redis命令表，从command.c文件里加载到内存，该文件是由commands目录下的json文件自动生成的
 void populateCommandTable(void) {
     int j;
     struct redisCommand *c;
@@ -6322,7 +6327,7 @@ int changeListenPort(int port, socketFds *sfd, aeFileProc *accept_handler) {
 
     return C_OK;
 }
-
+//SIGTERM 或 SIGINT 时，调用该函数
 static void sigShutdownHandler(int sig) {
     char *msg;
 
@@ -6343,9 +6348,9 @@ static void sigShutdownHandler(int sig) {
      * on disk and without waiting for lagging replicas. */
     if (server.shutdown_asap && sig == SIGINT) {
         serverLogFromHandler(LL_WARNING, "You insist... exiting now.");
-        rdbRemoveTempFile(getpid(), 1);
+        rdbRemoveTempFile(getpid(), 1);// 删除rdb临时文件
         exit(1); /* Exit with an error since this was not a clean shutdown. */
-    } else if (server.loading) {
+    } else if (server.loading) {//当正在从磁盘加载数据时，先不关闭
         msg = "Received shutdown signal during loading, scheduling shutdown.";
     }
 
@@ -6359,11 +6364,12 @@ void setupSignalHandlers(void) {
 
     /* When the SA_SIGINFO flag is set in sa_flags then sa_sigaction is used.
      * Otherwise, sa_handler is used. */
+    // 当sa_flags设置了SA_SIGINFO，那么就会使用sa_sigaction的handler，否则使用sa_handler的handler
     sigemptyset(&act.sa_mask);
     act.sa_flags = 0;
     act.sa_handler = sigShutdownHandler;
-    sigaction(SIGTERM, &act, NULL);
-    sigaction(SIGINT, &act, NULL);
+    sigaction(SIGTERM, &act, NULL);//注册信号处理函数
+    sigaction(SIGINT, &act, NULL);//注册信号处理函数
 
     sigemptyset(&act.sa_mask);
     act.sa_flags = SA_NODEFER | SA_RESETHAND | SA_SIGINFO;
@@ -6596,6 +6602,7 @@ int checkForSentinelMode(int argc, char **argv, char *exec_name) {
 }
 
 /* Function called at startup to load RDB or AOF file in memory. */
+// 在启动时，加载RDB或AOF文件到内存
 void loadDataFromDisk(void) {
     long long start = ustime();
     if (server.aof_state == AOF_ON) {
@@ -6663,10 +6670,8 @@ void loadDataFromDisk(void) {
 }
 
 void redisOutOfMemoryHandler(size_t allocation_size) {
-    serverLog(LL_WARNING,"Out Of Memory allocating %zu bytes!",
-        allocation_size);
-    serverPanic("Redis aborting for OUT OF MEMORY. Allocating %zu bytes!",
-        allocation_size);
+    serverLog(LL_WARNING,"Out Of Memory allocating %zu bytes!", allocation_size);
+    serverPanic("Redis aborting for OUT OF MEMORY. Allocating %zu bytes!", allocation_size);
 }
 
 /* Callback for sdstemplate on proc-title-template. See redis.conf for
@@ -6743,6 +6748,7 @@ void redisSetCpuAffinity(const char *cpulist) {
 
 /* Send a notify message to systemd. Returns sd_notify return code which is
  * a positive number on success. */
+// 发送一条通知消息到systemd，
 int redisCommunicateSystemd(const char *sd_notify_msg) {
 #ifdef HAVE_LIBSYSTEMD
     int ret = sd_notify(0, sd_notify_msg);
@@ -6769,7 +6775,7 @@ static int redisSupervisedUpstart(void) {
     }
 
     serverLog(LL_NOTICE, "supervised by upstart, will stop to signal readiness.");
-    raise(SIGSTOP);
+    raise(SIGSTOP);//触发SIGSTOP信号
     unsetenv("UPSTART_JOB");
     return 1;
 }
@@ -6866,7 +6872,7 @@ redisTestProc *getTestProcByName(const char *name) {
 int main(int argc, char **argv) {
     struct timeval tv;
     int j;
-    char config_from_stdin = 0;
+    char config_from_stdin = 0;//标准输入
 
 #ifdef REDIS_TEST
     if (argc >= 3 && !strcasecmp(argv[1], "test")) {
@@ -6930,14 +6936,16 @@ int main(int argc, char **argv) {
      */
     umask(server.umask = umask(0777));
 
+    //生成字典用的hash函数随机种子
     uint8_t hashseed[16];
     getRandomBytes(hashseed,sizeof(hashseed));
     dictSetHashFunctionSeed(hashseed);
 
+    //获取输入的参数
     char *exec_name = strrchr(argv[0], '/');
     if (exec_name == NULL) exec_name = argv[0];
     server.sentinel_mode = checkForSentinelMode(argc,argv, exec_name);
-    initServerConfig();
+    initServerConfig();//初始化server的配置项，初始化redis命令表
     ACLInit(); /* The ACL subsystem must be initialized ASAP because the
                   basic networking code and client creation depends on it. */
     moduleInitModulesSystem();
@@ -6948,7 +6956,7 @@ int main(int argc, char **argv) {
     server.executable = getAbsolutePath(argv[0]);
     server.exec_argv = zmalloc(sizeof(char*)*(argc+1));
     server.exec_argv[argc] = NULL;
-    for (j = 0; j < argc; j++) server.exec_argv[j] = zstrdup(argv[j]);
+    for (j = 0; j < argc; j++) server.exec_argv[j] = zstrdup(argv[j]);//把argv[j] 输入参数复制一份到 server.exec_argv[j]
 
     /* We need to init sentinel right now as parsing the configuration file
      * in sentinel mode will have the effect of populating the sentinel
@@ -7022,19 +7030,13 @@ int main(int argc, char **argv) {
         if (server.sentinel_mode) loadSentinelConfigFromQueue();
         sdsfree(options);
     }
-    if (server.sentinel_mode) sentinelCheckConfigFile();
+    if (server.sentinel_mode) sentinelCheckConfigFile();//检查哨兵配置文件是否设置并且是否有写权限
     server.supervised = redisIsSupervised(server.supervised_mode);
     int background = server.daemonize && !server.supervised;
     if (background) daemonize();
 
     serverLog(LL_WARNING, "oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo");
-    serverLog(LL_WARNING,
-        "Redis version=%s, bits=%d, commit=%s, modified=%d, pid=%d, just started",
-            REDIS_VERSION,
-            (sizeof(long) == 8) ? 64 : 32,
-            redisGitSHA1(),
-            strtol(redisGitDirty(),NULL,10) > 0,
-            (int)getpid());
+    serverLog(LL_WARNING, "Redis version=%s, bits=%d, commit=%s, modified=%d, pid=%d, just started", REDIS_VERSION, (sizeof(long) == 8) ? 64 : 32, redisGitSHA1(), strtol(redisGitDirty(),NULL,10) > 0, (int)getpid());
 
     if (argc == 1) {
         serverLog(LL_WARNING, "Warning: no config file specified, using the default config. In order to specify a config file use %s /path/to/redis.conf", argv[0]);
@@ -7042,13 +7044,13 @@ int main(int argc, char **argv) {
         serverLog(LL_WARNING, "Configuration loaded");
     }
 
-    initServer();
+    initServer();//初始化server
     if (background || server.pidfile) createPidFile();
     if (server.set_proc_title) redisSetProcTitle(NULL);
-    redisAsciiArt();
+    redisAsciiArt();//打印redis logo
     checkTcpBacklogSettings();
 
-    if (!server.sentinel_mode) {
+    if (!server.sentinel_mode) {//本redis实例不是哨兵模式
         /* Things not needed when running in Sentinel mode. */
         serverLog(LL_WARNING,"Server initialized");
     #ifdef __linux__
@@ -7071,8 +7073,8 @@ int main(int argc, char **argv) {
     #endif /* __arm64__ */
     #endif /* __linux__ */
         moduleInitModulesSystemLast();
-        moduleLoadFromQueue();
-        ACLLoadUsersAtStartup();
+        moduleLoadFromQueue();//加载配置文件里loadmodule指定的模块
+        ACLLoadUsersAtStartup();//加载ACL配置
         InitServerLast();
         aofLoadManifestFromDisk();
         loadDataFromDisk();
@@ -7098,8 +7100,8 @@ int main(int argc, char **argv) {
             }
             redisCommunicateSystemd("READY=1\n");
         }
-    } else {
-        ACLLoadUsersAtStartup();
+    } else {//哨兵模式的redis实例
+        ACLLoadUsersAtStartup();//加载ACL配置
         InitServerLast();
         sentinelIsRunning();
         if (server.supervised_mode == SUPERVISED_SYSTEMD) {
@@ -7109,6 +7111,7 @@ int main(int argc, char **argv) {
     }
 
     /* Warning the user about suspicious maxmemory setting. */
+    // 警告用户有可疑的maxmemory设置
     if (server.maxmemory > 0 && server.maxmemory < 1024*1024) {
         serverLog(LL_WARNING,"WARNING: You specified a maxmemory value that is less than 1MB (current value is %llu bytes). Are you sure this is what you really want?", server.maxmemory);
     }
@@ -7116,7 +7119,7 @@ int main(int argc, char **argv) {
     redisSetCpuAffinity(server.server_cpulist);
     setOOMScoreAdj(-1);
 
-    aeMain(server.el);//进入事件循环
+    aeMain(server.el);//启动事件循环（while循环 阻塞在这）
     aeDeleteEventLoop(server.el);
     return 0;
 }

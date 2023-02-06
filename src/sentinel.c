@@ -509,6 +509,7 @@ void initSentinel(void) {
 
 /* This function is for checking whether sentinel config file has been set,
  * also checking whether we have write permissions. */
+// 当是哨兵模式时，检查对应的哨兵配置文件是否设置了，同时检查对该配置文件是否有写权限
 void sentinelCheckConfigFile(void) {
     if (server.configfile == NULL) {
         serverLog(LL_WARNING,
@@ -524,19 +525,21 @@ void sentinelCheckConfigFile(void) {
 
 /* This function gets called when the server is in Sentinel mode, started,
  * loaded the configuration, and is ready for normal operations. */
+// 当redis是哨兵模式时，启动并加载配置
 void sentinelIsRunning(void) {
     int j;
 
     /* If this Sentinel has yet no ID set in the configuration file, we
      * pick a random one and persist the config on disk. From now on this
      * will be this Sentinel ID across restarts. */
+    // 若哨兵的id没有在配置文件里指定，则随机生成一个id并持久化到配置文件
     for (j = 0; j < CONFIG_RUN_ID_SIZE; j++)
         if (sentinel.myid[j] != 0) break;
 
     if (j == CONFIG_RUN_ID_SIZE) {
         /* Pick ID and persist the config. */
-        getRandomHexChars(sentinel.myid,CONFIG_RUN_ID_SIZE);
-        sentinelFlushConfig();
+        getRandomHexChars(sentinel.myid,CONFIG_RUN_ID_SIZE);//随机生成一个哨兵id
+        sentinelFlushConfig();//刷入到配置文件
     }
 
     /* Log its ID to make debugging of issues simpler. */

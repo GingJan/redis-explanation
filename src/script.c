@@ -78,9 +78,10 @@ client* scriptGetCaller() {
  * from time to time to reply some special command (like ping)
  * and also check if the run should be terminated. */
 int scriptInterrupt(scriptRunCtx *run_ctx) {
-    if (run_ctx->flags & SCRIPT_TIMEDOUT) {
+    if (run_ctx->flags & SCRIPT_TIMEDOUT) {//脚本超时
         /* script already timedout
            we just need to precess some events and return */
+        // 脚本已超时，此时需要处理一些文件事件并返回
         processEventsWhileBlocked();
         return (run_ctx->flags & SCRIPT_KILLED) ? SCRIPT_KILL : SCRIPT_CONTINUE;
     }

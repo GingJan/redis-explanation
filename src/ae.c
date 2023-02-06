@@ -153,7 +153,7 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
     }
     zfree(eventLoop);//释放eventLoop的空间
 }
-
+//关闭事件循环
 void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
@@ -181,11 +181,11 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask, aeFileProc *proc
         eventLoop->maxfd = fd;
     return AE_OK;
 }
-
+//删除对fd的指定事件监听
 void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
 {
     if (fd >= eventLoop->setsize) return;
-    aeFileEvent *fe = &eventLoop->events[fd];
+    aeFileEvent *fe = &eventLoop->events[fd];//获取该fd对应的文件事件
     if (fe->mask == AE_NONE) return;
 
     /* We want to always remove AE_BARRIER if set when AE_WRITABLE
@@ -196,8 +196,8 @@ void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
      */
     if (mask & AE_WRITABLE) mask |= AE_BARRIER; // mask | 0100，取mask=X1XX
 
-    aeApiDelEvent(eventLoop, fd, mask);
-    fe->mask = fe->mask & (~mask);
+    aeApiDelEvent(eventLoop, fd, mask);//调用系统底层的epoll_ct(DEL)，删除对fd的指定事件监听，mask=指定的事件
+    fe->mask = fe->mask & (~mask);//更新 剩余的事件
     if (fd == eventLoop->maxfd && fe->mask == AE_NONE) {
         /* Update the max fd */
         int j;
@@ -281,6 +281,7 @@ static int64_t usUntilEarliestTimer(aeEventLoop *eventLoop) {
 }
 
 /* Process time events */
+// 处理时间事件
 static int processTimeEvents(aeEventLoop *eventLoop) {
     int processed = 0;
     aeTimeEvent *te;
@@ -293,12 +294,13 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
         long long id;
 
         /* Remove events scheduled for deletion. */
+        // 删除id=-1的时间事件
         if (te->id == AE_DELETED_EVENT_ID) {
             aeTimeEvent *next = te->next;
             /* If a reference exists for this timer event,
              * don't free it. This is currently incremented
              * for recursive timerProc calls */
-            if (te->refcount) {
+            if (te->refcount) {//当refcount不为0 说明该te正在被timerProc函数处理
                 te = next;
                 continue;
             }
@@ -322,23 +324,23 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
          * add new timers on the head, however if we change the implementation
          * detail, this check may be useful again: we keep it here for future
          * defense. */
-        if (te->id > maxId) {
+        if (te->id > maxId) {//在本次循环开始后添加的时间事件不会被当前循环处理
             te = te->next;
             continue;
         }
 
-        if (te->when <= now) {//当到了/过了 时间事件 的执行时间点 则执行该事件
+        if (te->when <= now) {//当 到了/过了 时间事件 的执行时间点，则执行该事件
             int retval;
 
             id = te->id;
-            te->refcount++;
+            te->refcount++;//当前时间事件正在被处理
             retval = te->timeProc(eventLoop, id, te->clientData);
-            te->refcount--;
+            te->refcount--;//当前时间事件处理完毕
             processed++;
             now = getMonotonicUs();
             if (retval != AE_NOMORE) {
-                te->when = now + retval * 1000;
-            } else {
+                te->when = now + retval * 1000;//更新下一次触发的时间点
+            } else {//当返回的时NOMORE时，则把该时间事件删除
                 te->id = AE_DELETED_EVENT_ID;
             }
         }
@@ -440,7 +442,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             if (!invert && fe->mask & mask & AE_READABLE) {//如果事件的mask里没AE_BARRIER标志，但设置了AE_READABLE，说明该fd对应的事件是可读事件
                 fe->rfileProc(eventLoop,fd,fe->clientData,mask);//处理该可读事件
                 fired++;
-                fe = &eventLoop->events[fd]; /* Refresh in case of resize. */
+                fe = &eventLoop->events[fd]; /* 重新获取fe，以防eventLoop当前正在进行扩缩容导致fe指向的地址变化 Refresh in case of resize. */
             }
 
             /* 触发可写事件 */
@@ -465,6 +467,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             processed++;//已处理事件个数
         }
     }
+
     /* 检查时间事件 */
     if (flags & AE_TIME_EVENTS)
         processed += processTimeEvents(eventLoop);//处理时间事件
@@ -497,6 +500,7 @@ int aeWait(int fd, int mask, long long milliseconds) {
 void aeMain(aeEventLoop *eventLoop) {
     eventLoop->stop = 0;//事件循环的停止标识
     while (!eventLoop->stop) {
+        //以阻塞的方式 处理文件和时间事件
         aeProcessEvents(eventLoop, AE_ALL_EVENTS|
                                    AE_CALL_BEFORE_SLEEP|
                                    AE_CALL_AFTER_SLEEP);

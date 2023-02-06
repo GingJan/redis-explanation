@@ -1671,8 +1671,8 @@ int showThroughput(struct aeEventLoop *eventLoop, long long id, void *clientData
         exit(1);
     }
     if (config.num_threads && requests_finished >= config.requests) {
-        aeStop(eventLoop);
-        return AE_NOMORE;
+        aeStop(eventLoop);//停止 时间事件 的处理
+        return AE_NOMORE;// 本时间事件 结束
     }
     if (config.csv) return SHOW_THROUGHPUT_INTERVAL;
     /* only first thread output throughput */

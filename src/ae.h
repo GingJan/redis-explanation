@@ -39,16 +39,16 @@
 #define AE_NONE 0       /* 无已注册的事件 */
 #define AE_READABLE 1   /* 当fd可读时触发 */
 #define AE_WRITABLE 2   /* 当fd可写时触发 */
-#define AE_BARRIER 4    /* 若在eventLoop的同一次事件里都触发了读写，则不要再触发可写事件。当在批量发送响应数据给client时，需把内容先持久化到磁盘时 非常有用 */
+#define AE_BARRIER 4    /* 读写事件处理顺序是否反转，默认情况下，先处理读再处理写，当在批量发送响应数据给client时，需把内容先持久化到磁盘时 非常有用 */
 
 #define AE_FILE_EVENTS (1<<0)//1
 #define AE_TIME_EVENTS (1<<1)//2
 #define AE_ALL_EVENTS (AE_FILE_EVENTS|AE_TIME_EVENTS)//3
-#define AE_DONT_WAIT (1<<2)//4
+#define AE_DONT_WAIT (1<<2)//4 不阻塞等待，立即返回
 #define AE_CALL_BEFORE_SLEEP (1<<3)//8
 #define AE_CALL_AFTER_SLEEP (1<<4)//16
 
-#define AE_NOMORE -1
+#define AE_NOMORE -1// 「本」时间事件 结束
 #define AE_DELETED_EVENT_ID -1
 
 /* Macros */

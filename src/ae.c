@@ -73,7 +73,7 @@ aeEventLoop *aeCreateEventLoop(int setsize) {
     if ((eventLoop = zmalloc(sizeof(*eventLoop))) == NULL) goto err;//给eventLoop分配空间失败
     eventLoop->events = zmalloc(sizeof(aeFileEvent)*setsize);//给events分配空间
     eventLoop->fired = zmalloc(sizeof(aeFiredEvent)*setsize);//给fired分配空间
-    if (eventLoop->events == NULL || eventLoop->fired == NULL) goto err;
+    if (eventLoop->events == NULL || eventLoop->fired == NULL) goto err;//在创建eventLoop时，申请events 或 fired 空间失败
     eventLoop->setsize = setsize;
     eventLoop->timeEventHead = NULL;
     eventLoop->timeEventNextId = 0;
@@ -91,9 +91,9 @@ aeEventLoop *aeCreateEventLoop(int setsize) {
 
 err:
     if (eventLoop) {
-        zfree(eventLoop->events);
-        zfree(eventLoop->fired);
-        zfree(eventLoop);
+        zfree(eventLoop->events);//当创建eventLoop错误时，释放events已申请的空间
+        zfree(eventLoop->fired);//当创建eventLoop错误时，释放fired已申请的空间
+        zfree(eventLoop);//当创建eventLoop错误时，释放eventLoop已申请的空间
     }
     return NULL;
 }
@@ -111,7 +111,10 @@ void aeSetDontWait(aeEventLoop *eventLoop, int noWait) {
         eventLoop->flags &= ~AE_DONT_WAIT;
 }
 
-/* 重设事件循环的setsize。
+/* 对eventloop进行扩缩容
+ * 如果传入的setsize比当前setsize小，但是当前已使用的size大于传入setsize，
+ * 则返回AE_ERR，同时不会进行任何处理，否则返回AE_OK并执行扩/缩容逻辑
+ *
  * If the requested set size is smaller than the current set size, but
  * there is already a file descriptor in use that is >= the requested
  * set size minus one, AE_ERR is returned and the operation is not
@@ -125,8 +128,8 @@ int aeResizeSetSize(aeEventLoop *eventLoop, int setsize) {
     if (eventLoop->maxfd >= setsize) return AE_ERR;
     if (aeApiResize(eventLoop,setsize) == -1) return AE_ERR;
 
-    eventLoop->events = zrealloc(eventLoop->events,sizeof(aeFileEvent)*setsize);
-    eventLoop->fired = zrealloc(eventLoop->fired,sizeof(aeFiredEvent)*setsize);
+    eventLoop->events = zrealloc(eventLoop->events,sizeof(aeFileEvent)*setsize);//events指向的空间扩缩容
+    eventLoop->fired = zrealloc(eventLoop->fired,sizeof(aeFiredEvent)*setsize);//fired指向的空间扩缩容
     eventLoop->setsize = setsize;
 
     /* Make sure that if we created new slots, they are initialized with
@@ -135,20 +138,20 @@ int aeResizeSetSize(aeEventLoop *eventLoop, int setsize) {
         eventLoop->events[i].mask = AE_NONE;
     return AE_OK;
 }
-
+//删除eventLoop，同时释放空间
 void aeDeleteEventLoop(aeEventLoop *eventLoop) {
-    aeApiFree(eventLoop);
-    zfree(eventLoop->events);
-    zfree(eventLoop->fired);
+    aeApiFree(eventLoop);//释放eventLoop的epoll实例
+    zfree(eventLoop->events);//删除eventLoop时，释放events 的空间
+    zfree(eventLoop->fired);//删除eventLoop时，释放fired 的空间
 
-    /* Free the time events list. */
+    /* 释放 时间事件链表 的空间 */
     aeTimeEvent *next_te, *te = eventLoop->timeEventHead;
     while (te) {
         next_te = te->next;
-        zfree(te);
+        zfree(te);//删除eventLoop时，释放时间事件链表 的空间
         te = next_te;
     }
-    zfree(eventLoop);
+    zfree(eventLoop);//释放eventLoop的空间
 }
 
 void aeStop(aeEventLoop *eventLoop) {
@@ -170,7 +173,7 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask, aeFileProc *proc
 
     if (aeApiAddEvent(eventLoop, fd, mask) == -1)//调用系统对应的epoll_add()
         return AE_ERR;
-    fe->mask |= mask;
+    fe->mask |= mask;// 0001读，0010写，0100
     if (mask & AE_READABLE) fe->rfileProc = proc;
     if (mask & AE_WRITABLE) fe->wfileProc = proc;
     fe->clientData = clientData;
@@ -186,8 +189,12 @@ void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
     if (fe->mask == AE_NONE) return;
 
     /* We want to always remove AE_BARRIER if set when AE_WRITABLE
-     * is removed. */
-    if (mask & AE_WRITABLE) mask |= AE_BARRIER;
+     * is removed.
+     *
+     * 在删除AE_WRITABLE时总是删除AE_BARRIER（若设置了）
+     *
+     */
+    if (mask & AE_WRITABLE) mask |= AE_BARRIER; // mask | 0100，取mask=X1XX
 
     aeApiDelEvent(eventLoop, fd, mask);
     fe->mask = fe->mask & (~mask);
@@ -364,7 +371,11 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
     /* Note that we want to call select() even if there are no
      * file events to process as long as we want to process time
      * events, in order to sleep until the next time event is ready
-     * to fire. */
+     * to fire.
+     *
+     * 注意，只要我们想处理时间事件，即使没有文件事件要处理，我们也要调用 select()也即epoll_wait，
+     * 以便 休眠/阻塞 到下一个时间事件准备好触发（这样就不会空跑浪费）
+     * */
     if (eventLoop->maxfd != -1 || ((flags & AE_TIME_EVENTS) && !(flags & AE_DONT_WAIT))) {
         int j;
         struct timeval tv, *tvp;
@@ -400,7 +411,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
         if (eventLoop->beforesleep != NULL && flags & AE_CALL_BEFORE_SLEEP)
             eventLoop->beforesleep(eventLoop);
 
-        /* 调用多路复用api，一直阻塞直到 超时或有事件触发时才返回 */
+        /* 调用多路复用api，一直阻塞直到 超时 或 有事件触发时才返回 */
         numevents = aeApiPoll(eventLoop, tvp);//numevents 触发事件的个数，aeApiPoll()底层是调用对应系统的epoll_wait()
 
         /* 回调aftersleep函数 */
@@ -408,10 +419,10 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             eventLoop->aftersleep(eventLoop);
 
         for (j = 0; j < numevents; j++) {
-            int fd = eventLoop->fired[j].fd;
-            aeFileEvent *fe = &eventLoop->events[fd];
-            int mask = eventLoop->fired[j].mask;
-            int fired = 0; /* Number of events fired for current fd. */
+            int fd = eventLoop->fired[j].fd;//触发事件的fd
+            aeFileEvent *fe = &eventLoop->events[fd];// 注册的文件事件
+            int mask = eventLoop->fired[j].mask;//触发事件的mask
+            int fired = 0; /* 当前fd 已触发事件的个数 Number of events fired for current fd. */
 
             /* 通常先处理可读事件，然后再处理可写事件，因为这样可以在处理完查询请求后立即把响应返回给该查询请求
              *
@@ -419,14 +430,14 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
              * 在这种情况下，我们要反转调用次序。这非常有用，例如想在beforeSleep()钩子函数里做些逻辑，像
              * 在返回响应给客户端前，先执行文件同步fsync刷到磁盘的逻辑
              */
-            int invert = fe->mask & AE_BARRIER;
+            int invert = fe->mask & AE_BARRIER;// 当注册的文件事件 设置了AE_BARRIER
 
             /* 注意，"fe->mask & mask & ..." 代码： maybe an already
              * processed event removed an element that fired and we still
              * didn't processed, so we check if the event is still valid.
              *
              * 若调用次序无需反转，则触发可读事件 */
-            if (!invert && fe->mask & mask & AE_READABLE) {//如果被触发事件的mask里没AE_BARRIER标志，且是AE_READABLE
+            if (!invert && fe->mask & mask & AE_READABLE) {//如果事件的mask里没AE_BARRIER标志，但设置了AE_READABLE，说明该fd对应的事件是可读事件
                 fe->rfileProc(eventLoop,fd,fe->clientData,mask);//处理该可读事件
                 fired++;
                 fe = &eventLoop->events[fd]; /* Refresh in case of resize. */
@@ -442,7 +453,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 
             /* 若需反转调用次序，则在处理完可写事件后，再处理可读事件 */
             if (invert) {
-                fe = &eventLoop->events[fd]; /* Refresh in case of resize. */
+                fe = &eventLoop->events[fd]; /* 重新获取fe，以防当前eventLoop被扩缩容 Refresh in case of resize. */
                 if ((fe->mask & mask & AE_READABLE) &&
                     (!fired || fe->wfileProc != fe->rfileProc))
                 {

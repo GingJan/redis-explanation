@@ -223,6 +223,7 @@ void *zcalloc_usable(size_t size, size_t *usable) {
 
 /* Try reallocating memory, and return NULL if failed.
  * '*usable' is set to the usable size if non NULL. */
+// 尝试在ptr原地址上分配更多空间（扩容）
 void *ztryrealloc_usable(void *ptr, size_t size, size_t *usable) {
     ASSERT_NO_SIZE_OVERFLOW(size);
 #ifndef HAVE_MALLOC_SIZE
@@ -231,27 +232,27 @@ void *ztryrealloc_usable(void *ptr, size_t size, size_t *usable) {
     size_t oldsize;
     void *newptr;
 
-    /* not allocating anything, just redirect to free. */
+    /* 不分配空间，只释放空间 not allocating anything, just redirect to free. */
     if (size == 0 && ptr != NULL) {
         zfree(ptr);
         if (usable) *usable = 0;
         return NULL;
     }
-    /* Not freeing anything, just redirect to malloc. */
+    /* 不释放空间，只分配空间 Not freeing anything, just redirect to malloc. */
     if (ptr == NULL)
         return ztrymalloc_usable(size, usable);
 
 #ifdef HAVE_MALLOC_SIZE
-    oldsize = zmalloc_size(ptr);
-    newptr = realloc(ptr,size);
+    oldsize = zmalloc_size(ptr);//malloc_size(ptr)
+    newptr = realloc(ptr,size);//系统调用 realloc，在原ptr指向的地址上尝试分配更多的内存，若无法在原址上分配更多，则在新地址返回新的内存块，所以newptr指向的地址可能与ptr一样，也可能不一样
     if (newptr == NULL) {
         if (usable) *usable = 0;
         return NULL;
     }
 
-    update_zmalloc_stat_free(oldsize);
-    size = zmalloc_size(newptr);
-    update_zmalloc_stat_alloc(size);
+    update_zmalloc_stat_free(oldsize);//统计释放的空间字节
+    size = zmalloc_size(newptr);//获取newptr分配的内存大小
+    update_zmalloc_stat_alloc(size);//统计使用的空间字节
     if (usable) *usable = size;
     return newptr;
 #else
@@ -272,8 +273,9 @@ void *ztryrealloc_usable(void *ptr, size_t size, size_t *usable) {
 }
 
 /* Reallocate memory and zero it or panic */
+// 对ptr 扩容
 void *zrealloc(void *ptr, size_t size) {
-    ptr = ztryrealloc_usable(ptr, size, NULL);
+    ptr = ztryrealloc_usable(ptr, size, NULL);//对ptr 扩容
     if (!ptr && size != 0) zmalloc_oom_handler(size);
     return ptr;
 }

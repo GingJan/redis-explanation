@@ -2475,12 +2475,8 @@ static int updateMaxclients(const char **err) {
         *err = msg;
         return 0;
     }
-    if ((unsigned int) aeGetSetSize(server.el) <
-        server.maxclients + CONFIG_FDSET_INCR)
-    {
-        if (aeResizeSetSize(server.el,
-            server.maxclients + CONFIG_FDSET_INCR) == AE_ERR)
-        {
+    if ((unsigned int) aeGetSetSize(server.el) < server.maxclients + CONFIG_FDSET_INCR) {
+        if (aeResizeSetSize(server.el, server.maxclients + CONFIG_FDSET_INCR) == AE_ERR) {
             *err = "The event loop API used by Redis is not able to handle the specified number of clients";
             return 0;
         }

@@ -39,7 +39,7 @@
 #define AE_NONE 0       /* 无已注册的事件 */
 #define AE_READABLE 1   /* 当fd可读时触发 */
 #define AE_WRITABLE 2   /* 当fd可写时触发 */
-#define AE_BARRIER 4    /* 若在同一次事件循环里触发了可读事件，则不要再触发可写事件。当你想以组的方式发送回复给client前把内容先持久化到磁盘时 非常有用 */
+#define AE_BARRIER 4    /* 若在eventLoop的同一次事件里都触发了读写，则不要再触发可写事件。当在批量发送响应数据给client时，需把内容先持久化到磁盘时 非常有用 */
 
 #define AE_FILE_EVENTS (1<<0)//1
 #define AE_TIME_EVENTS (1<<1)//2
@@ -64,7 +64,7 @@ typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 
 /* 文件事件 结构体 */
 typedef struct aeFileEvent {
-    int mask; /* AE_READABLE 或 AE_WRITABLE 或 AE_BARRIER */
+    int mask; /* AE_READABLE 0001 或 AE_WRITABLE 0010 或 AE_BARRIER 0100 */
     aeFileProc *rfileProc; //可读事件处理函数
     aeFileProc *wfileProc; //可写事件处理函数
     void *clientData; //客户端数据
@@ -85,8 +85,8 @@ typedef struct aeTimeEvent {
 
 /* 某个被触发的事件 */
 typedef struct aeFiredEvent {
-    int fd;
-    int mask;
+    int fd;//事件对应的fd
+    int mask;//事件需要进行的操作，0001读，0010写，0100，当这个fd同时有读写事件时，mask=0011
 } aeFiredEvent;
 
 /* 基于事件状态的程序 */
@@ -95,12 +95,12 @@ typedef struct aeEventLoop {
     int setsize; /* 可注册的fd的数量 */
     long long timeEventNextId; //时间事件的id生成器
     aeFileEvent *events; /* 已注册的事件，是一个数组，下标是fd */
-    aeFiredEvent *fired; /* 已触发的事件，是一个数组，下标是fd */
-    aeTimeEvent *timeEventHead; //时间事件链的头节点
+    aeFiredEvent *fired; /* 被触发的事件，是一个数组，下标是fd */
+    aeTimeEvent *timeEventHead; //时间事件链表 的头节点
     int stop;
     void *apidata; /* 该字段用于存放对应系统创建的epoll实例 */
-    aeBeforeSleepProc *beforesleep;
-    aeBeforeSleepProc *aftersleep;
+    aeBeforeSleepProc *beforesleep; // 在调用epoll_wait前执行
+    aeBeforeSleepProc *aftersleep; // 在epoll_wait返回后执行
     int flags;
 } aeEventLoop;
 

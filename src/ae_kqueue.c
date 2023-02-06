@@ -40,19 +40,29 @@ typedef struct aeApiState {
     /* Events mask for merge read and write event.
      * To reduce memory consumption, we use 2 bits to store the mask
      * of an event, so that 1 byte will store the mask of 4 events. */
+    // 合并了读写事件
+    // 为了减少内存使用，使用2个位存储一个事件的mask，所以1个字节可存放4个事件的mask
     char *eventsMask; 
 } aeApiState;
 
 #define EVENT_MASK_MALLOC_SIZE(sz) (((sz) + 3) / 4)
-#define EVENT_MASK_OFFSET(fd) ((fd) % 4 * 2)
-#define EVENT_MASK_ENCODE(fd, mask) (((mask) & 0x3) << EVENT_MASK_OFFSET(fd))
+/*
+ * fd=1，返回2，
+ * fd=2，返回4，
+ * fd=3，返回6，
+ * fd=4，返回0，
+ * fd=5，返回2，
+ * fd=6，返回4
+ */
+#define EVENT_MASK_OFFSET(fd) ((fd) % 4 * 2)//返回0，2，4，6
+#define EVENT_MASK_ENCODE(fd, mask) (((mask) & 0x3) << EVENT_MASK_OFFSET(fd))//0x3=0000 0011，取mask低两位 左移0/2/4/6
 
 static inline int getEventMask(const char *eventsMask, int fd) {
     return (eventsMask[fd/4] >> EVENT_MASK_OFFSET(fd)) & 0x3;
 }
 
 static inline void addEventMask(char *eventsMask, int fd, int mask) {
-    eventsMask[fd/4] |= EVENT_MASK_ENCODE(fd, mask);
+    eventsMask[fd/4] |= EVENT_MASK_ENCODE(fd, mask);//1个字节存4个事件的mask
 }
 
 static inline void resetEventMask(char *eventsMask, int fd) {
@@ -75,8 +85,8 @@ static int aeApiCreate(aeEventLoop *eventLoop) {
         return -1;
     }
     anetCloexec(state->kqfd);//避免fd泄漏
-    state->eventsMask = zmalloc(EVENT_MASK_MALLOC_SIZE(eventLoop->setsize));
-    memset(state->eventsMask, 0, EVENT_MASK_MALLOC_SIZE(eventLoop->setsize));//把指定内存空间都初始化为 0
+    state->eventsMask = zmalloc(EVENT_MASK_MALLOC_SIZE(eventLoop->setsize));//空间分配
+    memset(state->eventsMask, 0, EVENT_MASK_MALLOC_SIZE(eventLoop->setsize));//memset把指定内存空间都初始化为 0
     eventLoop->apidata = state;
     return 0;
 }
@@ -89,14 +99,14 @@ static int aeApiResize(aeEventLoop *eventLoop, int setsize) {
     memset(state->eventsMask, 0, EVENT_MASK_MALLOC_SIZE(setsize));
     return 0;
 }
-
+//释放eventLoop的epoll实例
 static void aeApiFree(aeEventLoop *eventLoop) {
     aeApiState *state = eventLoop->apidata;
 
-    close(state->kqfd);
-    zfree(state->events);
-    zfree(state->eventsMask);
-    zfree(state);
+    close(state->kqfd);//关闭epoll fd
+    zfree(state->events);//释放eventLoop时，同时释放state的events的空间，state是epoll实例
+    zfree(state->eventsMask);//释放eventLoop时，同时释放 state的eventsMask 的空间，state是epoll实例
+    zfree(state);//释放state state是epoll实例
 }
 //添加需要监听的fd到epoll里
 static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
@@ -136,6 +146,7 @@ static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
         struct timespec timeout;
         timeout.tv_sec = tvp->tv_sec;
         timeout.tv_nsec = tvp->tv_usec * 1000;
+        //当state->kqfd的epoll实例里注册的fd有事件触发时，把有触发事件的fd存到events空间里，eventLoop->setsize告诉kevent存储的空间有多大
         retval = kevent(state->kqfd, NULL, 0, state->events, eventLoop->setsize,&timeout);
     } else {
         //没有设置超时时间 timeout，因此可以无限期阻塞等待
@@ -151,15 +162,20 @@ static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
          * However, under kqueue, read and write events would be separate
          * events, which would make it impossible to control the order of
          * reads and writes. So we store the event's mask we've got and merge
-         * the same fd events later. */
+         * the same fd events later.
+         *
+         * 通常先执行读事件，然后再执行写事件，当设置了barrier标识，则先处理写，再处理读事件
+         * 然而，在kqueue里，读和写事件是单独分开的，导致无法控制读和写的顺序，
+         * 所以先存好已触发的事件然后再把该事件对应fd的读写合并
+         * */
         for (j = 0; j < retval; j++) {
             struct kevent *e = state->events+j;
-            int fd = e->ident;
+            int fd = e->ident;//触发事件对应的fd
             int mask = 0; 
 
-            if (e->filter == EVFILT_READ) mask = AE_READABLE;
-            else if (e->filter == EVFILT_WRITE) mask = AE_WRITABLE;
-            addEventMask(state->eventsMask, fd, mask);
+            if (e->filter == EVFILT_READ) mask = AE_READABLE;//该fd触发了可读事件
+            else if (e->filter == EVFILT_WRITE) mask = AE_WRITABLE;//该fd触发了可写事件
+            addEventMask(state->eventsMask, fd, mask);//把有事件的fd和事件类型 存入eventsMaks
         }
 
         /* Re-traversal to merge read and write events, and set the fd's mask to
@@ -168,12 +184,12 @@ static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
         for (j = 0; j < retval; j++) {
             struct kevent *e = state->events+j;
             int fd = e->ident;
-            int mask = getEventMask(state->eventsMask, fd);
+            int mask = getEventMask(state->eventsMask, fd);//获取该fd上含有的事件，mask可能只有读 或 写 或 读写都有 或 读写都无
 
-            if (mask) {
-                eventLoop->fired[numevents].fd = fd;
-                eventLoop->fired[numevents].mask = mask;
-                resetEventMask(state->eventsMask, fd);
+            if (mask) {//有事件触发
+                eventLoop->fired[numevents].fd = fd;//把从epoll_wait里获取到的事件和对应fd填入eventLoop的fired
+                eventLoop->fired[numevents].mask = mask;//把从epoll_wait里获取到的事件和对应fd填入eventLoop的fired
+                resetEventMask(state->eventsMask, fd);//充值state->eventsMask，以便下一次kevent使用
                 numevents++;
             }
         }

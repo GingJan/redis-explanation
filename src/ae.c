@@ -63,7 +63,8 @@
     #endif
 #endif
 
-// 创建事件循环实例
+// 创建eventLoop 实例 setsize是可监听event的数量
+// 本函数有以下逻辑，申请空间，初始化事件的mask，当前系统对应的多路复用接口epoll_create以创建epoll
 aeEventLoop *aeCreateEventLoop(int setsize) {
     aeEventLoop *eventLoop;
     int i;
@@ -71,8 +72,8 @@ aeEventLoop *aeCreateEventLoop(int setsize) {
     monotonicInit();    /* 再次调用monotonic时钟的初始化，以防未初始化monotonic时钟 */
 
     if ((eventLoop = zmalloc(sizeof(*eventLoop))) == NULL) goto err;//给eventLoop分配空间失败
-    eventLoop->events = zmalloc(sizeof(aeFileEvent)*setsize);//给events分配空间
-    eventLoop->fired = zmalloc(sizeof(aeFiredEvent)*setsize);//给fired分配空间
+    eventLoop->events = zmalloc(sizeof(aeFileEvent) * setsize);//给events分配空间
+    eventLoop->fired = zmalloc(sizeof(aeFiredEvent) * setsize);//给fired分配空间
     if (eventLoop->events == NULL || eventLoop->fired == NULL) goto err;//在创建eventLoop时，申请events 或 fired 空间失败
     eventLoop->setsize = setsize;
     eventLoop->timeEventHead = NULL;
@@ -99,8 +100,9 @@ err:
 }
 
 /* Return the current set size. */
+// 返回当前eventLoop的容量（可放入fd的数量）
 int aeGetSetSize(aeEventLoop *eventLoop) {
-    return eventLoop->setsize;//被追踪的fd的最大数量
+    return eventLoop->setsize;//可存fd的个数
 }
 
 /* Tells the next iteration/s of the event processing to set timeout of 0. */

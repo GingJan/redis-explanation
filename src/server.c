@@ -2473,16 +2473,16 @@ void initServer(void) {
         serverLog(LL_WARNING, "Failed creating the event loop. Error message: '%s'", strerror(errno));
         exit(1);
     }
-    server.db = zmalloc(sizeof(redisDb)*server.dbnum);//为数据库数组分配空间
+    server.db = zmalloc(sizeof(redisDb) * server.dbnum);//为数据库数组分配空间
 
     /* Open the TCP listening socket for the user commands. */
-    // 初始化并建立一批fd的tcp监听
+    // 初始化并开始监听 fd 上的tcp连接请求
     if (server.port != 0 && listenToPort(server.port,&server.ipfd) == C_ERR) {
         /* Note: the following log text is matched by the test suite. */
         serverLog(LL_WARNING, "Failed listening on port %u (TCP), aborting.", server.port);
         exit(1);
     }
-    //初始化并建立一批fd的tcp监听（tls）
+    // 初始化并开始监听 fd 上的tls连接请求
     if (server.tls_port != 0 && listenToPort(server.tls_port,&server.tlsfd) == C_ERR) {
         /* Note: the following log text is matched by the test suite. */
         serverLog(LL_WARNING, "Failed listening on port %u (TLS), aborting.", server.tls_port);
@@ -2490,6 +2490,7 @@ void initServer(void) {
     }
 
     /* 建立unix监听 Open the listening Unix domain socket. */
+    // 初始化并开始监听 fd 上的unix连接请求
     if (server.unixsocket != NULL) {
         unlink(server.unixsocket); /* don't care if this fails */
         server.sofd = anetUnixServer(server.neterr,server.unixsocket,(mode_t)server.unixsocketperm, server.tcp_backlog);//建立unix监听
@@ -2502,7 +2503,7 @@ void initServer(void) {
     }
 
     /* Abort if there are no listening sockets at all. */
-    // 如果没有tcp、tcp（ssl）、unix的监听fd，则退出
+    // 如果没有tcp、tls、unix的监听，则退出
     if (server.ipfd.count == 0 && server.tlsfd.count == 0 && server.sofd < 0) {
         serverLog(LL_WARNING, "Configured to not listen anywhere, exiting.");
         exit(1);
@@ -2524,6 +2525,8 @@ void initServer(void) {
         server.db[j].slots_to_keys = NULL; /* Set by clusterInit later on if necessary. */
         listSetFreeMethod(server.db[j].defrag_later,(void (*)(void*))sdsfree);
     }
+
+
     evictionPoolAlloc(); /* Initialize the LRU keys pool. */
     server.pubsub_channels = dictCreate(&keylistDictType);
     server.pubsub_patterns = dictCreate(&keylistDictType);

@@ -35,7 +35,7 @@
 
 typedef struct aeApiState {
     int kqfd;//epoll的fd（在drawin就是kqueue的fd）
-    struct kevent *events;//用于存放事件
+    struct kevent *events;//事件池，用于存放事件，可放setsize个kevent，一个kevent对应一个fd
 
     /* Events mask for merge read and write event.
      * To reduce memory consumption, we use 2 bits to store the mask
@@ -73,7 +73,7 @@ static int aeApiCreate(aeEventLoop *eventLoop) {
     aeApiState *state = zmalloc(sizeof(aeApiState));
 
     if (!state) return -1;
-    state->events = zmalloc(sizeof(struct kevent)*eventLoop->setsize);
+    state->events = zmalloc(sizeof(struct kevent) * eventLoop->setsize);
     if (!state->events) {
         zfree(state);//回收已分配的内存
         return -1;

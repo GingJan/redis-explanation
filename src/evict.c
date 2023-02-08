@@ -56,11 +56,11 @@
 struct evictionPoolEntry {
     unsigned long long idle;    /* Object idle time (inverse frequency for LFU) */
     sds key;                    /* Key name. */
-    sds cached;                 /* Cached SDS object for key name. */
+    sds cached;                 /* 键名对应的SDS实例 Cached SDS object for key name. */
     int dbid;                   /* Key DB number. */
 };
 
-static struct evictionPoolEntry *EvictionPoolLRU;
+static struct evictionPoolEntry *EvictionPoolLRU;//LRU key淘汰池，一共16个evictionPoolEntry，每个数据库一个evictionPoolEntry
 
 /* ----------------------------------------------------------------------------
  * Implementation of eviction, aging and LRU
@@ -124,11 +124,11 @@ void evictionPoolAlloc(void) {
     struct evictionPoolEntry *ep;
     int j;
 
-    ep = zmalloc(sizeof(*ep)*EVPOOL_SIZE);
+    ep = zmalloc(sizeof(*ep) * EVPOOL_SIZE);
     for (j = 0; j < EVPOOL_SIZE; j++) {
         ep[j].idle = 0;
         ep[j].key = NULL;
-        ep[j].cached = sdsnewlen(NULL,EVPOOL_CACHED_SDS_SIZE);
+        ep[j].cached = sdsnewlen(NULL,EVPOOL_CACHED_SDS_SIZE);//初始化键名SDS
         ep[j].dbid = 0;
     }
     EvictionPoolLRU = ep;

@@ -105,7 +105,7 @@ typedef struct aeEventLoop {
 } aeEventLoop;
 
 /* Prototypes */
-aeEventLoop *aeCreateEventLoop(int setsize);
+aeEventLoop *aeCreateEventLoop(int setsize);// 创建 eventLoop实例，setsize是可监听event的数量，本函数有以下逻辑，申请空间，初始化事件的mask，当前系统对应的多路复用接口epoll_create以创建epoll
 void aeDeleteEventLoop(aeEventLoop *eventLoop);
 void aeStop(aeEventLoop *eventLoop);
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask, aeFileProc *proc, void *clientData);

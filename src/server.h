@@ -172,6 +172,8 @@ typedef long long ustime_t; /* microsecond time type. */
  * of file descriptors we can handle are server.maxclients + RESERVED_FDS +
  * a few more to stay safe. Since RESERVED_FDS defaults to 32, we add 96
  * in order to make sure of not over provisioning more than 128 fds. */
+// 在配置eventLoop时，配置最大可处理的fd数量，该数量时 server.maxclients + CONFIG_MIN_RESERVED_FDS + 为了安全多加些许个数
+// 因为 CONFIG_MIN_RESERVED_FDS默认是32，加上96确保不超过128
 #define CONFIG_FDSET_INCR (CONFIG_MIN_RESERVED_FDS+96)
 
 /* OOM Score Adjustment classes. */
@@ -378,6 +380,7 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 
 /* Client classes for client limits, currently used only for
  * the max-client-output-buffer limit implementation. */
+// 客户端类型
 #define CLIENT_TYPE_NORMAL 0 /* Normal req-reply clients + MONITORs */
 #define CLIENT_TYPE_SLAVE 1  /* Slaves. */
 #define CLIENT_TYPE_PUBSUB 2 /* Clients subscribed to PubSub channels. */
@@ -1582,7 +1585,7 @@ struct redisServer {
     long long slowlog_entry_id;     /* SLOWLOG current entry ID */
     long long slowlog_log_slower_than; /* SLOWLOG time limit (to get logged) */
     unsigned long slowlog_max_len;     /* SLOWLOG max number of items logged */
-    struct malloc_stats cron_malloc_stats; /* sampled in serverCron(). */
+    struct malloc_stats cron_malloc_stats; /* 在serverCron()里的采样数据 sampled in serverCron(). */
     redisAtomic long long stat_net_input_bytes; /* 从网络读取的字节数 Bytes read from network. */
     redisAtomic long long stat_net_output_bytes; /* 写到网络的字节数 Bytes written to network. */
     size_t stat_current_cow_peak;   /* Peak size of copy on write bytes. */

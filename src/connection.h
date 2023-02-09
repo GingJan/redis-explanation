@@ -42,13 +42,13 @@ typedef struct connection connection;
 typedef enum {
     CONN_STATE_NONE = 0,
     CONN_STATE_CONNECTING,//连接中
-    CONN_STATE_ACCEPTING,//在全连接队列中
+    CONN_STATE_ACCEPTING,//从全连接队列取出中
     CONN_STATE_CONNECTED,//已建立连接
     CONN_STATE_CLOSED,//关闭
     CONN_STATE_ERROR
 } ConnectionState;//连接状态
 
-#define CONN_FLAG_CLOSE_SCHEDULED   (1<<0)      /* Closed scheduled by a handler */
+#define CONN_FLAG_CLOSE_SCHEDULED   (1<<0)      /* 延迟释放conn标识 Closed scheduled by a handler */
 #define CONN_FLAG_WRITE_BARRIER     (1<<1)      /* Write barrier requested */
 
 #define CONN_TYPE_SOCKET            1
@@ -75,10 +75,10 @@ typedef struct ConnectionType {
 } ConnectionType;
 
 struct connection {
-    ConnectionType *type;
+    ConnectionType *type;//存放方法的具体实现
     ConnectionState state;
     short int flags;
-    short int refs;
+    short int refs;//当前conn正在被refs个handler处理中
     int last_errno;
     void *private_data;
     ConnectionCallbackFunc conn_handler;

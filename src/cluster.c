@@ -868,7 +868,7 @@ void clusterAcceptHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
             connCreateAcceptedTLS(cfd, TLS_CLIENT_AUTH_YES) : connCreateAcceptedSocket(cfd);
 
         /* Make sure connection is not in an error state */
-        if (connGetState(conn) != CONN_STATE_ACCEPTING) {
+        if (connGetState(conn) != CONN_STATE_ACCEPTING) {//状态异常
             serverLog(LL_VERBOSE,
                 "Error creating an accepting connection for cluster node: %s",
                     connGetLastError(conn));

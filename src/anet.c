@@ -60,7 +60,7 @@ static void anetSetError(char *err, const char *fmt, ...)
     vsnprintf(err, ANET_ERR_LEN, fmt, ap);
     va_end(ap);
 }
-
+//调用系统调用fcntl设置fd为非阻塞
 int anetSetBlock(char *err, int fd, int non_block) {
     int flags;
 
@@ -88,7 +88,7 @@ int anetSetBlock(char *err, int fd, int non_block) {
     }
     return ANET_OK;
 }
-
+//调用系统调用fcntl设置fd为非阻塞
 int anetNonBlock(char *err, int fd) {
     return anetSetBlock(err,fd,1);
 }
@@ -100,7 +100,8 @@ int anetBlock(char *err, int fd) {
 /* Enable the FD_CLOEXEC on the given fd to avoid fd leaks. 
  * This function should be invoked for fd's on specific places 
  * where fork + execve system calls are called. */
-// 设置 fd 为 FD_CLOEXEC，以免fd泄漏
+// 设置 fd 为 FD_CLOEXEC，以免fd泄漏，底层调用fcntl设置
+// 用于在fork 或 execve 系统调用时 使用
 int anetCloexec(int fd) {
     int r;
     int flags;
@@ -128,7 +129,7 @@ int anetKeepAlive(char *err, int fd, int interval)
 {
     int val = 1;
 
-    if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val)) == -1)
+    if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val)) == -1)//设置fd keepalive
     {
         anetSetError(err, "setsockopt SO_KEEPALIVE: %s", strerror(errno));
         return ANET_ERR;
@@ -164,7 +165,7 @@ int anetKeepAlive(char *err, int fd, int interval)
         return ANET_ERR;
     }
 #else
-    ((void) interval); /* Avoid unused var warning for non Linux systems. */
+    ((void) interval); /* 非linux系统不支持interval的设置 Avoid unused var warning for non Linux systems. */
 #endif
 
     return ANET_OK;
@@ -504,6 +505,8 @@ int anetUnixServer(char *err, char *path, mode_t perm, int backlog)
 
 /* Accept a connection and also make sure the socket is non-blocking, and CLOEXEC.
  * returns the new socket FD, or -1 on error. */
+// 接受一个连接请求，并确保socket是非阻塞的，同时是CLOEXEC
+// 返回一个新的socket fd，错误则返回-1
 static int anetGenericAccept(char *err, int s, struct sockaddr *sa, socklen_t *len) {
     int fd;
     do {
@@ -512,7 +515,7 @@ static int anetGenericAccept(char *err, int s, struct sockaddr *sa, socklen_t *l
 #ifdef HAVE_ACCEPT4
         fd = accept4(s, sa, len,  SOCK_NONBLOCK | SOCK_CLOEXEC);
 #else
-        fd = accept(s,sa,len);
+        fd = accept(s,sa,len);//从内核的全连接队列里获取一个连接，并新建fd
 #endif
     } while(fd == -1 && errno == EINTR);
     if (fd == -1) {
@@ -520,12 +523,12 @@ static int anetGenericAccept(char *err, int s, struct sockaddr *sa, socklen_t *l
         return ANET_ERR;
     }
 #ifndef HAVE_ACCEPT4
-    if (anetCloexec(fd) == -1) {
+    if (anetCloexec(fd) == -1) {//对新连接fd 设置CLOEXEC，底层调用fcntl
         anetSetError(err, "anetCloexec: %s", strerror(errno));
         close(fd);
         return ANET_ERR;
     }
-    if (anetNonBlock(err, fd) != ANET_OK) {
+    if (anetNonBlock(err, fd) != ANET_OK) {//设置fd为非阻塞，底层调用fcntl
         close(fd);
         return ANET_ERR;
     }
@@ -535,18 +538,24 @@ static int anetGenericAccept(char *err, int s, struct sockaddr *sa, socklen_t *l
 
 /* Accept a connection and also make sure the socket is non-blocking, and CLOEXEC.
  * returns the new socket FD, or -1 on error. */
+// 接受一个连接请求，并确保socket是非阻塞的，同时是CLOEXEC
+// 返回一个新的 连接socket fd ，错误则返回-1
+// serversock 是监听fd
 int anetTcpAccept(char *err, int serversock, char *ip, size_t ip_len, int *port) {
     int fd;
     struct sockaddr_storage sa;
     socklen_t salen = sizeof(sa);
+
+    //调用系统accept() 和 fcntl() 接受新连接并设置为非阻塞 CLOEXEC
     if ((fd = anetGenericAccept(err,serversock,(struct sockaddr*)&sa,&salen)) == ANET_ERR)
         return ANET_ERR;
 
-    if (sa.ss_family == AF_INET) {
+    if (sa.ss_family == AF_INET) {//IPV4
         struct sockaddr_in *s = (struct sockaddr_in *)&sa;
         if (ip) inet_ntop(AF_INET,(void*)&(s->sin_addr),ip,ip_len);
-        if (port) *port = ntohs(s->sin_port);
+        if (port) *port = ntohs(s->sin_port);//客户端端口
     } else {
+        //IPV6
         struct sockaddr_in6 *s = (struct sockaddr_in6 *)&sa;
         if (ip) inet_ntop(AF_INET6,(void*)&(s->sin6_addr),ip,ip_len);
         if (port) *port = ntohs(s->sin6_port);

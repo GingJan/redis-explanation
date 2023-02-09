@@ -126,8 +126,8 @@ client *createClient(connection *conn) {
      * contexts (for instance a Lua script) we need a non connected client. */
     // conn可能为NULL，因为存在无连接的client，全部命令都需要在client的上下文内执行，当命令在其他上下文内执行时（如lua脚本）则需要无连接的client
     if (conn) {
-        connEnableTcpNoDelay(conn);//开始tcp数据实时传输
-        if (server.tcpkeepalive)//开启长连接心跳
+        connEnableTcpNoDelay(conn);//开始tcp数据实时传输，即允许数据以多个小包形式在网络上传输
+        if (server.tcpkeepalive)//如果开启了长连接心跳
             connKeepAlive(conn,server.tcpkeepalive);
         connSetReadHandler(conn, readQueryFromClient);
         connSetPrivateData(conn, c);
@@ -1262,12 +1262,12 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
     char conninfo[100];
     UNUSED(ip);
 
-    if (connGetState(conn) != CONN_STATE_ACCEPTING) {
+    if (connGetState(conn) != CONN_STATE_ACCEPTING) {//状态异常
         serverLog(LL_VERBOSE,
             "Accepted client connection in error state: %s (conn: %s)",
             connGetLastError(conn),
             connGetInfo(conn, conninfo, sizeof(conninfo)));
-        connClose(conn);
+        connClose(conn);//关闭conn
         return;
     }
 
@@ -1276,7 +1276,7 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
      * Admission control will happen before a client is created and connAccept()
      * called, because we don't want to even start transport-level negotiation
      * if rejected. */
-    // 客户端的连接数量 + 集群内节点之间建立的数量 超过限制
+    // 客户端的连接数量 + 集群内节点之间建立的数量 超过限制，则
     if (listLength(server.clients) + getClusterConnectionsCount() >= server.maxclients) {
         char *err;
         if (server.cluster_enabled)
@@ -1288,15 +1288,17 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
         /* That's a best effort error message, don't check write errors.
          * Note that for TLS connections, no handshake was done yet so nothing
          * is written and the connection will just drop. */
-        if (connWrite(conn,err,strlen(err)) == -1) {
-            /* Nothing to do, Just to avoid the warning... */
+        /* 只是尽量尝试回写错误消息，无需检查write()函数返回的错误，
+         * 注意对于TLS连接，目前还未完成握手，所以无需写任何数据，并且连接会被丢弃 */
+        if (connWrite(conn,err,strlen(err)) == -1) {//回写连接conn的错误信息给client
+            /* 不做任何处理，只是为了避免编译时的警告提示 Nothing to do, Just to avoid the warning... */
         }
         server.stat_rejected_conn++;
-        connClose(conn);
+        connClose(conn);//关闭连接conn
         return;
     }
 
-    /* Create connection and client */
+    /* 创建client实例 Create connection and client */
     if ((c = createClient(conn)) == NULL) {
         serverLog(LL_WARNING,
             "Error registering fd event for the new client: %s (conn: %s)",
@@ -1335,16 +1337,15 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     UNUSED(mask);
     UNUSED(privdata);
 
-    while(max--) {
-        cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);
+    while(max--) {//每次accept事件触发最多处理1000条accept连接
+        cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);//cfd 连接fd
         if (cfd == ANET_ERR) {
             if (errno != EWOULDBLOCK)
-                serverLog(LL_WARNING,
-                    "Accepting client connection: %s", server.neterr);
+                serverLog(LL_WARNING, "Accepting client connection: %s", server.neterr);
             return;
         }
         serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
-        acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip);
+        acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip);//用于tcp连接
     }
 }
 

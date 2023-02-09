@@ -145,17 +145,20 @@ void *connGetPrivateData(connection *conn) {
  */
 
 /* Close the connection and free resources. */
+/* 关闭连接，同时释放资源 */
 static void connSocketClose(connection *conn) {
     if (conn->fd != -1) {
-        aeDeleteFileEvent(server.el,conn->fd, AE_READABLE | AE_WRITABLE);
-        close(conn->fd);
-        conn->fd = -1;
+        aeDeleteFileEvent(server.el,conn->fd, AE_READABLE | AE_WRITABLE);//从epoll删除fd的监听
+        close(conn->fd);//调用系统close()关闭fd
+        conn->fd = -1;//此时，conn对应的fd已被关闭 且 不在epoll的监听列表里，但是conn这个实例还未释放，因为此时可能还有其他的handler正在处理该conn
     }
 
-    /* If called from within a handler, schedule the close but
+    /* 若从handler内部调用
+     *
+     * If called from within a handler, schedule the close but
      * keep the connection until the handler returns.
      */
-    if (connHasRefs(conn)) {
+    if (connHasRefs(conn)) {//若还有其他handler正在处理该conn，则现在不能马上释放conn，添加scheduled标识，等待全部handler处理完毕该conn时，再调用本函数进行conn的释放
         conn->flags |= CONN_FLAG_CLOSE_SCHEDULED;
         return;
     }
@@ -171,8 +174,9 @@ static int connSocketWrite(connection *conn, const void *data, size_t data_len) 
         /* Don't overwrite the state of a connection that is not already
          * connected, not to mess with handler callbacks.
          */
+        // 当连接还没建立时，不要覆盖conn的状态，不要和回调函数混淆
         if (errno != EINTR && conn->state == CONN_STATE_CONNECTED)
-            conn->state = CONN_STATE_ERROR;
+            conn->state = CONN_STATE_ERROR;//conn 连接出错
     }
 
     return ret;
@@ -213,7 +217,7 @@ static int connSocketRead(connection *conn, void *buf, size_t buf_len) {
 static int connSocketAccept(connection *conn, ConnectionCallbackFunc accept_handler) {
     int ret = C_OK;
 
-    if (conn->state != CONN_STATE_ACCEPTING) return C_ERR;
+    if (conn->state != CONN_STATE_ACCEPTING) return C_ERR;//状态异常
     conn->state = CONN_STATE_CONNECTED;
 
     connIncrRefs(conn);
@@ -360,13 +364,13 @@ static int connSocketGetType(connection *conn) {
     return CONN_TYPE_SOCKET;
 }
 
-ConnectionType CT_Socket = {
+ConnectionType CT_Socket = {//连接socket的处理函数具体实现
     .ae_handler = connSocketEventHandler,
     .close = connSocketClose,
-    .write = connSocketWrite,
+    .write = connSocketWrite,//调用系统write()函数，写数据给client
     .writev = connSocketWritev,
     .read = connSocketRead,
-    .accept = connSocketAccept,
+    .accept = connSocketAccept,//accept 回调函数
     .connect = connSocketConnect,
     .set_write_handler = connSocketSetWriteHandler,
     .set_read_handler = connSocketSetReadHandler,

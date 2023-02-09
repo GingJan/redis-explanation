@@ -78,8 +78,8 @@ static inline int callHandler(connection *conn, ConnectionCallbackFunc handler) 
     connIncrRefs(conn);
     if (handler) handler(conn);
     connDecrRefs(conn);
-    if (conn->flags & CONN_FLAG_CLOSE_SCHEDULED) {
-        if (!connHasRefs(conn)) connClose(conn);
+    if (conn->flags & CONN_FLAG_CLOSE_SCHEDULED) {//若conn设置了延迟释放
+        if (!connHasRefs(conn)) connClose(conn);//则先判断是否还有handler正在处理该conn，若无，则关闭并且释放该conn
         return 0;
     }
     return 1;

@@ -124,9 +124,10 @@ client *createClient(connection *conn) {
      * This is useful since all the commands needs to be executed
      * in the context of a client. When commands are executed in other
      * contexts (for instance a Lua script) we need a non connected client. */
+    // conn可能为NULL，因为存在无连接的client，全部命令都需要在client的上下文内执行，当命令在其他上下文内执行时（如lua脚本）则需要无连接的client
     if (conn) {
-        connEnableTcpNoDelay(conn);
-        if (server.tcpkeepalive)
+        connEnableTcpNoDelay(conn);//开始tcp数据实时传输
+        if (server.tcpkeepalive)//开启长连接心跳
             connKeepAlive(conn,server.tcpkeepalive);
         connSetReadHandler(conn, readQueryFromClient);
         connSetPrivateData(conn, c);
@@ -1275,9 +1276,8 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
      * Admission control will happen before a client is created and connAccept()
      * called, because we don't want to even start transport-level negotiation
      * if rejected. */
-    if (listLength(server.clients) + getClusterConnectionsCount()
-        >= server.maxclients)
-    {
+    // 客户端的连接数量 + 集群内节点之间建立的数量 超过限制
+    if (listLength(server.clients) + getClusterConnectionsCount() >= server.maxclients) {
         char *err;
         if (server.cluster_enabled)
             err = "-ERR max number of clients + cluster "

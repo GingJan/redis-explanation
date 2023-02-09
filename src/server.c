@@ -2247,8 +2247,8 @@ void closeSocketListeners(socketFds *sfd) {
     for (j = 0; j < sfd->count; j++) {
         if (sfd->fd[j] == -1) continue;
 
-        aeDeleteFileEvent(server.el, sfd->fd[j], AE_READABLE);
-        close(sfd->fd[j]);
+        aeDeleteFileEvent(server.el, sfd->fd[j], AE_READABLE);//删除对该fd的读监听
+        close(sfd->fd[j]);//关闭fd
     }
 
     sfd->count = 0;
@@ -2259,7 +2259,7 @@ int createSocketAcceptHandler(socketFds *sfd, aeFileProc *accept_handler) {
     int j;
 
     for (j = 0; j < sfd->count; j++) {
-        //对sfd->count个监听fd创建accept文件事件并注册入事件循环server.el里（底层调用epoll_ct（EPOLL_CTL_ADD）），当accept有事件发生时，调用accept_handler处理
+        //对sfd->count多个监听fd创建accept文件事件并注册入事件循环server.el里（底层调用epoll_ct（EPOLL_CTL_ADD）），当accept有事件发生时，调用accept_handler处理
         if (aeCreateFileEvent(server.el, sfd->fd[j], AE_READABLE, accept_handler,NULL) == AE_ERR) {
             /* Rollback */
             //accept文件事件创建失败，则从事件循环server.el里移除该文件事件（底层调用epoll_ct（EPOLL_CTL_DEL））
@@ -2289,8 +2289,8 @@ int createSocketAcceptHandler(socketFds *sfd, aeFileProc *accept_handler) {
  * configuration but the function is not able to bind * for at least
  * one of the IPv4 or IPv6 protocols.
  *
- * 初始化并建立一批fd的tcp监听
- *
+ * 初始化并对多个fd的建立tcp监听
+ * 只要有一个fd建立监听失败，就全部fd都关闭监听
  * */
 int listenToPort(int port, socketFds *sfd) {
     int j;
@@ -2299,7 +2299,7 @@ int listenToPort(int port, socketFds *sfd) {
     /* If we have no bind address, we don't listen on a TCP socket */
     // 如果没有绑定的地址，则不用进行TCP监听
     if (server.bindaddr_count == 0) return C_OK;
-    //建立多个监听
+    //建立多个fd的监听
     for (j = 0; j < server.bindaddr_count; j++) {
         char* addr = bindaddr[j];
         int optional = *addr == '-';
@@ -2324,7 +2324,7 @@ int listenToPort(int port, socketFds *sfd) {
                 continue;
 
             /* Rollback successful listens before exiting */
-            closeSocketListeners(sfd);
+            closeSocketListeners(sfd);//若某个fd上建立监听失败，则把全部成功建立监听的fd都关闭，然后退出
             return C_ERR;
         }
         if (server.socket_mark_id > 0) anetSetSockMarkId(NULL, sfd->fd[sfd->count], server.socket_mark_id);//anetSetSockMarkId作用？ todo
@@ -2468,7 +2468,7 @@ void initServer(void) {
     adjustOpenFilesLimit();
     const char *clk_msg = monotonicInit();
     serverLog(LL_NOTICE, "monotonic clock: %s", clk_msg);
-    server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);//创建 事件循环 实例
+    server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);//创建 事件循环 实例，核心
     if (server.el == NULL) {//当无法创建 事件循环 实例时 报错&退出
         serverLog(LL_WARNING, "Failed creating the event loop. Error message: '%s'", strerror(errno));
         exit(1);
@@ -7047,7 +7047,7 @@ int main(int argc, char **argv) {
         serverLog(LL_WARNING, "Configuration loaded");
     }
 
-    initServer();//初始化server
+    initServer();//初始化server，核心，包含tcp连接监听初始化
     if (background || server.pidfile) createPidFile();
     if (server.set_proc_title) redisSetProcTitle(NULL);
     redisAsciiArt();//打印redis logo

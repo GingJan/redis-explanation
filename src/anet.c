@@ -172,6 +172,7 @@ int anetKeepAlive(char *err, int fd, int interval)
 
 static int anetSetTcpNoDelay(char *err, int fd, int val)
 {
+    //TCP_NODELAY 关闭Nagle算法，允许小数据包传输，实时性更强，延时更低，若开启了Nagle算法，则需等数据攒够一批再发送
     if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)) == -1)
     {
         anetSetError(err, "setsockopt TCP_NODELAY: %s", strerror(errno));

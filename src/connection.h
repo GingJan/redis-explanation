@@ -41,12 +41,12 @@ typedef struct connection connection;
 
 typedef enum {
     CONN_STATE_NONE = 0,
-    CONN_STATE_CONNECTING,
-    CONN_STATE_ACCEPTING,
-    CONN_STATE_CONNECTED,
-    CONN_STATE_CLOSED,
+    CONN_STATE_CONNECTING,//连接中
+    CONN_STATE_ACCEPTING,//在全连接队列中
+    CONN_STATE_CONNECTED,//已建立连接
+    CONN_STATE_CLOSED,//关闭
     CONN_STATE_ERROR
-} ConnectionState;
+} ConnectionState;//连接状态
 
 #define CONN_FLAG_CLOSE_SCHEDULED   (1<<0)      /* Closed scheduled by a handler */
 #define CONN_FLAG_WRITE_BARRIER     (1<<1)      /* Write barrier requested */

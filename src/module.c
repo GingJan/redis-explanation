@@ -374,7 +374,7 @@ typedef struct RedisModuleEventListener {
     RedisModuleEventCallback callback;
 } RedisModuleEventListener;
 
-list *RedisModule_EventListeners; /* Global list of all the active events. */
+list *RedisModule_EventListeners; /* 所有触发事件的全局链表 Global list of all the active events. */
 
 /* Data structures related to the redis module users */
 
@@ -10572,7 +10572,13 @@ int RM_IsSubEventSupported(RedisModuleEvent event, int64_t subevent) {
  * to return the structure with more information to the callback.
  *
  * 'eid' and 'subid' are just the main event ID and the sub event associated
- * with the event, depending on what exactly happened. */
+ * with the event, depending on what exactly happened.
+ *
+ * 当我们触发一个可被module中断的事件时，redis内部就会调用该函数
+ * data指针返回指定事件的数据
+ *
+ * eid和subid是主事件id和相关联的子事件
+ * */
 void moduleFireServerEvent(uint64_t eid, int subid, void *data) {
     /* Fast path to return ASAP if there is nothing to do, avoiding to
      * setup the iterator and so forth: we want this call to be extremely

@@ -86,7 +86,7 @@ struct dict {
 
     /* Keep small vars at end for optimal (minimal) struct padding */
     int16_t pauserehash; /* If >0 rehashing is paused (<0 indicates coding error) */
-    signed char ht_size_exp[2]; /* exponent of size. (size = 1<<exp) */
+    signed char ht_size_exp[2]; /* 字典大小的指数幂 exponent of size. (size = 1<<exp) */
 };
 
 /* If safe is set to 1 this is a safe iterator, that means, you can call

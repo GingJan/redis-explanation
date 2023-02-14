@@ -213,7 +213,7 @@ static int connSocketRead(connection *conn, void *buf, size_t buf_len) {
 
     return ret;
 }
-
+//conn连接accept()后的回调函数
 static int connSocketAccept(connection *conn, ConnectionCallbackFunc accept_handler) {
     int ret = C_OK;
 
@@ -261,6 +261,7 @@ static int connSocketSetReadHandler(connection *conn, ConnectionCallbackFunc fun
     if (!conn->read_handler)
         aeDeleteFileEvent(server.el,conn->fd,AE_READABLE);
     else
+        //把本conn添加到epoll里监听可读事件，
         if (aeCreateFileEvent(server.el,conn->fd,
                     AE_READABLE,conn->type->ae_handler,conn) == AE_ERR) return C_ERR;
     return C_OK;
@@ -276,8 +277,7 @@ static void connSocketEventHandler(struct aeEventLoop *el, int fd, void *clientD
     UNUSED(fd);
     connection *conn = clientData;
 
-    if (conn->state == CONN_STATE_CONNECTING &&
-            (mask & AE_WRITABLE) && conn->conn_handler) {
+    if (conn->state == CONN_STATE_CONNECTING && (mask & AE_WRITABLE) && conn->conn_handler) {
 
         int conn_error = connGetSocketError(conn);
         if (conn_error) {
@@ -303,7 +303,10 @@ static void connSocketEventHandler(struct aeEventLoop *el, int fd, void *clientD
      * after the readable. In such a case, we invert the calls.
      * This is useful when, for instance, we want to do things
      * in the beforeSleep() hook, like fsync'ing a file to disk,
-     * before replying to a client. */
+     * before replying to a client.
+     *
+     * 通常，是先执行可读事件的handler，
+     * */
     int invert = conn->flags & CONN_FLAG_WRITE_BARRIER;
 
     int call_write = (mask & AE_WRITABLE) && conn->write_handler;

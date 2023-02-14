@@ -37,14 +37,14 @@
 #define strtold(a,b) ((long double)strtod((a),(b)))
 #endif
 
-/* ===================== Creation and parsing of objects ==================== */
+/* ===================== 创建并解析对象 Creation and parsing of objects ==================== */
 
 robj *createObject(int type, void *ptr) {
     robj *o = zmalloc(sizeof(*o));
-    o->type = type;
-    o->encoding = OBJ_ENCODING_RAW;
-    o->ptr = ptr;
-    o->refcount = 1;
+    o->type = type;//redis数据类型，即string、hash、list、set、sorted-set
+    o->encoding = OBJ_ENCODING_RAW;//编码类型
+    o->ptr = ptr;//数据
+    o->refcount = 1;//引用/共享 次数
 
     /* Set the LRU to the current lruclock (minutes resolution), or
      * alternatively the LFU counter. */
@@ -65,6 +65,8 @@ robj *createObject(int type, void *ptr) {
  * A common patter to create shared objects:
  *
  * robj *myobject = makeObjectShared(createObject(...));
+ *
+ *
  *
  */
 robj *makeObjectShared(robj *o) {
@@ -118,10 +120,10 @@ robj *createEmbeddedStringObject(const char *ptr, size_t len) {
  * we allocate as EMBSTR will still fit into the 64 byte arena of jemalloc. */
 #define OBJ_ENCODING_EMBSTR_SIZE_LIMIT 44
 robj *createStringObject(const char *ptr, size_t len) {
-    if (len <= OBJ_ENCODING_EMBSTR_SIZE_LIMIT)
+    if (len <= OBJ_ENCODING_EMBSTR_SIZE_LIMIT)//当字符串的字符个数小于等于44个时，使用emb内嵌结构,即sds和sds指向的字符串空间在同一块连续内存空间里
         return createEmbeddedStringObject(ptr,len);
     else
-        return createRawStringObject(ptr,len);
+        return createRawStringObject(ptr,len);//字符串空间和sds不在同一个连续空间
 }
 
 /* Same as CreateRawStringObject, can return NULL if allocation fails */

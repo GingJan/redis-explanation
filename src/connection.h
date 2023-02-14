@@ -78,9 +78,9 @@ struct connection {
     ConnectionType *type;//存放方法的具体实现
     ConnectionState state;
     short int flags;
-    short int refs;//当前conn正在被refs个handler处理中
+    short int refs;//当前conn正在被refs个handler处理中，当refs为0时，connection才可被释放，但可以先关闭连接close(fd)
     int last_errno;
-    void *private_data;
+    void *private_data;//存着client
     ConnectionCallbackFunc conn_handler;
     ConnectionCallbackFunc write_handler;
     ConnectionCallbackFunc read_handler;

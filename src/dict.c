@@ -472,10 +472,12 @@ void dictFreeUnlinkedEntry(dict *d, dictEntry *he) {
 }
 
 /* Destroy an entire dictionary */
+// 删除整个字典
 int _dictClear(dict *d, int htidx, void(callback)(dict*)) {
     unsigned long i;
 
     /* Free all the elements */
+    //释放所有元素的空间
     for (i = 0; i < DICTHT_SIZE(d->ht_size_exp[htidx]) && d->ht_used[htidx] > 0; i++) {
         dictEntry *he, *nextHe;
 
@@ -484,8 +486,8 @@ int _dictClear(dict *d, int htidx, void(callback)(dict*)) {
         if ((he = d->ht_table[htidx][i]) == NULL) continue;
         while(he) {
             nextHe = he->next;
-            dictFreeKey(d, he);
-            dictFreeVal(d, he);
+            dictFreeKey(d, he);//释放key的空间
+            dictFreeVal(d, he);//释放val的空间
             zfree(he);
             d->ht_used[htidx]--;
             he = nextHe;
@@ -499,6 +501,7 @@ int _dictClear(dict *d, int htidx, void(callback)(dict*)) {
 }
 
 /* Clear & Release the hash table */
+// 清除并释放整个hash字典
 void dictRelease(dict *d)
 {
     _dictClear(d,0,NULL);

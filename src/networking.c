@@ -88,6 +88,7 @@ int listMatchObjects(void *a, void *b) {
 
 /* This function links the client to the global linked list of clients.
  * unlinkClient() does the opposite, among other things. */
+// 把c新连接的客户端放到server.clients的链尾
 void linkClient(client *c) {
     listAddNodeTail(server.clients,c);
     /* Note that we remember the linked list node where the client is stored,
@@ -124,7 +125,8 @@ client *createClient(connection *conn) {
      * This is useful since all the commands needs to be executed
      * in the context of a client. When commands are executed in other
      * contexts (for instance a Lua script) we need a non connected client. */
-    // conn可能为NULL，因为存在无连接的client，全部命令都需要在client的上下文内执行，当命令在其他上下文内执行时（如lua脚本）则需要无连接的client
+    // conn可能为NULL，因为存在无连接的client，全部命令都需要在client的上下文内执行，
+    // 当命令在其他上下文内执行时（如lua脚本）则需要创建无连接的client
     if (conn) {
         connEnableTcpNoDelay(conn);//开始tcp数据实时传输，即允许数据以多个小包形式在网络上传输
         if (server.tcpkeepalive)//如果开启了长连接心跳
@@ -133,10 +135,10 @@ client *createClient(connection *conn) {
         connSetPrivateData(conn, c);
     }
     c->buf = zmalloc(PROTO_REPLY_CHUNK_BYTES);
-    selectDb(c,0);
+    selectDb(c,0);//默认选db0
     uint64_t client_id;
     atomicGetIncr(server.next_client_id, client_id, 1);
-    c->id = client_id;
+    c->id = client_id;//获取当前id
     c->resp = 2;
     c->conn = conn;
     c->name = NULL;
@@ -1191,6 +1193,7 @@ int clientHasPendingReplies(client *c) {
 }
 
 /* Return true if client connected from loopback interface */
+// 客户端是回环地址上（本地客户端）的吗
 int islocalClient(client *c) {
     /* unix-socket */
     if (c->flags & CLIENT_UNIX_SOCKET) return 1;
@@ -1201,15 +1204,15 @@ int islocalClient(client *c) {
 
     return !strcmp(cip,"127.0.0.1") || !strcmp(cip,"::1");
 }
-
+//系统accept()后的回调函数
 void clientAcceptHandler(connection *conn) {
-    client *c = connGetPrivateData(conn);
+    client *c = connGetPrivateData(conn);//获取conn连接对应的client
 
-    if (connGetState(conn) != CONN_STATE_CONNECTED) {
+    if (connGetState(conn) != CONN_STATE_CONNECTED) {//连接出现异常，异步关闭c
         serverLog(LL_WARNING,
                 "Error accepting a client connection: %s",
                 connGetLastError(conn));
-        freeClientAsync(c);
+        freeClientAsync(c);//异步释放c
         return;
     }
 
@@ -1217,9 +1220,7 @@ void clientAcceptHandler(connection *conn) {
      * is no password set, nor a specific interface is bound, we don't accept
      * requests from non loopback interfaces. Instead we try to explain the
      * user what to do to fix it if needed. */
-    if (server.protected_mode &&
-        DefaultUser->flags & USER_FLAG_NOPASS)
-    {
+    if (server.protected_mode && DefaultUser->flags & USER_FLAG_NOPASS) {
         if (!islocalClient(c)) {
             char *err =
                 "-DENIED Redis is running in protected mode because protected "
@@ -1241,16 +1242,16 @@ void clientAcceptHandler(connection *conn) {
                 "4) Setup a an authentication password for the default user. "
                 "NOTE: You only need to do one of the above things in order for "
                 "the server to start accepting connections from the outside.\r\n";
-            if (connWrite(c->conn,err,strlen(err)) == -1) {
+            if (connWrite(c->conn,err,strlen(err)) == -1) {//调用conn的write函数实现，尝试把错误信息发送给client
                 /* Nothing to do, Just to avoid the warning... */
             }
-            server.stat_rejected_conn++;
-            freeClientAsync(c);
+            server.stat_rejected_conn++;//统计拒绝连数
+            freeClientAsync(c);//异步释放c
             return;
         }
     }
 
-    server.stat_numconnections++;
+    server.stat_numconnections++;//连接数
     moduleFireServerEvent(REDISMODULE_EVENT_CLIENT_CHANGE,
                           REDISMODULE_SUBEVENT_CLIENT_CHANGE_CONNECTED,
                           c);
@@ -1262,7 +1263,7 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
     char conninfo[100];
     UNUSED(ip);
 
-    if (connGetState(conn) != CONN_STATE_ACCEPTING) {//状态异常
+    if (connGetState(conn) != CONN_STATE_ACCEPTING) {//状态异常，此时连接未建立成功
         serverLog(LL_VERBOSE,
             "Accepted client connection in error state: %s (conn: %s)",
             connGetLastError(conn),
@@ -1288,7 +1289,7 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
         /* That's a best effort error message, don't check write errors.
          * Note that for TLS connections, no handshake was done yet so nothing
          * is written and the connection will just drop. */
-        /* 只是尽量尝试回写错误消息，无需检查write()函数返回的错误，
+        /* 只是尽量尝试回写错误消息，无需检查write()函数返回的错误，因为此时连接可能已建立或未建立
          * 注意对于TLS连接，目前还未完成握手，所以无需写任何数据，并且连接会被丢弃 */
         if (connWrite(conn,err,strlen(err)) == -1) {//回写连接conn的错误信息给client
             /* 不做任何处理，只是为了避免编译时的警告提示 Nothing to do, Just to avoid the warning... */
@@ -1319,17 +1320,17 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
      *
      * Because of that, we must do nothing else afterwards.
      */
-    if (connAccept(conn, clientAcceptHandler) == C_ERR) {
+    if (connAccept(conn, clientAcceptHandler) == C_ERR) {//调用conn的accept实现
         char conninfo[100];
         if (connGetState(conn) == CONN_STATE_ERROR)
             serverLog(LL_WARNING,
                     "Error accepting a client connection: %s (conn: %s)",
                     connGetLastError(conn), connGetInfo(conn, conninfo, sizeof(conninfo)));
-        freeClient(connGetPrivateData(conn));
+        freeClient(connGetPrivateData(conn));//释放客户端
         return;
     }
 }
-
+//调用accept()，接受新的连接
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     int cport, cfd, max = MAX_ACCEPTS_PER_CALL;
     char cip[NET_IP_STR_LEN];
@@ -1337,8 +1338,8 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     UNUSED(mask);
     UNUSED(privdata);
 
-    while(max--) {//每次accept事件触发最多处理1000条accept连接
-        cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);//cfd 连接fd
+    while(max--) {//每次accept事件触发时，最多调用1000次系统accept()
+        cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);//cfd 连接fd，底层调用了accept()
         if (cfd == ANET_ERR) {
             if (errno != EWOULDBLOCK)
                 serverLog(LL_WARNING, "Accepting client connection: %s", server.neterr);
@@ -1555,8 +1556,8 @@ void freeClient(client *c) {
 
     /* If a client is protected, yet we need to free it right now, make sure
      * to at least use asynchronous freeing. */
-    if (c->flags & CLIENT_PROTECTED) {
-        freeClientAsync(c);
+    if (c->flags & CLIENT_PROTECTED) {//若c设置了保护标识，则
+        freeClientAsync(c);//（在serverCron里）异步释放c
         return;
     }
 
@@ -1568,12 +1569,14 @@ void freeClient(client *c) {
     }
 
     /* Notify module system that this client auth status changed. */
+    // 通知模块系统，c的状态有变化
     moduleNotifyUserChanged(c);
 
     /* If this client was scheduled for async freeing we need to remove it
      * from the queue. Note that we need to do this here, because later
      * we may call replicationCacheMaster() and the client should already
      * be removed from the list of clients to free. */
+    // 若该c需立即关闭，则从异步关闭队列里移除c
     if (c->flags & CLIENT_CLOSE_ASAP) {
         ln = listSearchKey(server.clients_to_close,c);
         serverAssert(ln != NULL);
@@ -1601,6 +1604,7 @@ void freeClient(client *c) {
     }
 
     /* Free the query buffer */
+    // 释放query缓冲
     sdsfree(c->querybuf);
     c->querybuf = NULL;
 
@@ -1636,7 +1640,7 @@ void freeClient(client *c) {
 
     /* Master/slave cleanup Case 1:
      * we lost the connection with a slave. */
-    if (c->flags & CLIENT_SLAVE) {
+    if (c->flags & CLIENT_SLAVE) {//如果客户端是个slave从节点
         /* If there is no any other slave waiting dumping RDB finished, the
          * current child process need not continue to dump RDB, then we kill it.
          * So child process won't use more memory, and we also can fork a new
@@ -1675,7 +1679,7 @@ void freeClient(client *c) {
 
     /* Master/slave cleanup Case 2:
      * we lost the connection with the master. */
-    if (c->flags & CLIENT_MASTER) replicationHandleMasterDisconnection();
+    if (c->flags & CLIENT_MASTER) replicationHandleMasterDisconnection();//客户端是主节点
 
     /* Remove the contribution that this client gave to our
      * incrementally computed memory usage. */
@@ -1701,17 +1705,21 @@ void freeClient(client *c) {
  * This function is useful when we need to terminate a client but we are in
  * a context where calling freeClient() is not possible, because the client
  * should be valid for the continuation of the flow of the program. */
+// 把client加到异步关闭链表里，等待异步释放client，即在serverCron()函数里释放client
 void freeClientAsync(client *c) {
     /* We need to handle concurrent access to the server.clients_to_close list
      * only in the freeClientAsync() function, since it's the only function that
      * may access the list while Redis uses I/O threads. All the other accesses
      * are in the context of the main thread while the other threads are
      * idle. */
+    /* 需要处理访问server.clients_to_close时的并发问题，因为在redis使用io线程时，该函数是唯一
+     * 一个会访问server.clients_to_close的函数，所有其他对该字段的访问都在主线程的上下文里进行*/
     if (c->flags & CLIENT_CLOSE_ASAP || c->flags & CLIENT_SCRIPT) return;
     c->flags |= CLIENT_CLOSE_ASAP;
     if (server.io_threads_num == 1) {
         /* no need to bother with locking if there's just one thread (the main thread) */
-        listAddNodeTail(server.clients_to_close,c);
+        // 如果只有一个线程（即主线程），则无需加锁
+        listAddNodeTail(server.clients_to_close,c);//添加c到异步关闭链表尾
         return;
     }
     static pthread_mutex_t async_free_queue_mutex = PTHREAD_MUTEX_INITIALIZER;

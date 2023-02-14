@@ -1683,7 +1683,7 @@ void afterSleep(struct aeEventLoop *eventLoop) {
     }
 }
 
-/* =========================== Server initialization ======================== */
+/* =========================== 服务器Server初始化 Server initialization ======================== */
 
 void createSharedObjects(void) {
     int j;
@@ -1828,8 +1828,7 @@ void createSharedObjects(void) {
     shared.redacted = makeObjectShared(createStringObject("(redacted)",10));
 
     for (j = 0; j < OBJ_SHARED_INTEGERS; j++) {
-        shared.integers[j] =
-            makeObjectShared(createObject(OBJ_STRING,(void*)(long)j));
+        shared.integers[j] = makeObjectShared(createObject(OBJ_STRING,(void*)(long)j));
         shared.integers[j]->encoding = OBJ_ENCODING_INT;
     }
     for (j = 0; j < OBJ_SHARED_BULKHDR_LEN; j++) {
@@ -2308,7 +2307,7 @@ int listenToPort(int port, socketFds *sfd) {
             /* 建立ipv6 tcp监听 */
             sfd->fd[sfd->count] = anetTcp6Server(server.neterr,port,addr,server.tcp_backlog);
         } else {
-            /* 建立ipv4 tcp监听 */
+            /* 建立ipv4 tcp监听，socket()+bind()+listen() */
             sfd->fd[sfd->count] = anetTcpServer(server.neterr,port,addr,server.tcp_backlog);
         }
         if (sfd->fd[sfd->count] == ANET_ERR) {
@@ -2464,7 +2463,7 @@ void initServer(void) {
         server.client_mem_usage_buckets[j].clients = listCreate();
     }
 
-    createSharedObjects();
+    createSharedObjects();//初始化全局共享对象
     adjustOpenFilesLimit();
     const char *clk_msg = monotonicInit();
     serverLog(LL_NOTICE, "monotonic clock: %s", clk_msg);
@@ -2476,13 +2475,13 @@ void initServer(void) {
     server.db = zmalloc(sizeof(redisDb) * server.dbnum);//为数据库数组分配空间
 
     /* Open the TCP listening socket for the user commands. */
-    // 初始化并开始监听 fd 上的tcp连接请求
+    // 初始化并监听listen() fd 上的tcp连接请求
     if (server.port != 0 && listenToPort(server.port,&server.ipfd) == C_ERR) {
         /* Note: the following log text is matched by the test suite. */
         serverLog(LL_WARNING, "Failed listening on port %u (TCP), aborting.", server.port);
         exit(1);
     }
-    // 初始化并开始监听 fd 上的tls连接请求
+    // 初始化并监听listen() fd 上的tls连接请求
     if (server.tls_port != 0 && listenToPort(server.tls_port,&server.tlsfd) == C_ERR) {
         /* Note: the following log text is matched by the test suite. */
         serverLog(LL_WARNING, "Failed listening on port %u (TLS), aborting.", server.tls_port);
@@ -2595,7 +2594,7 @@ void initServer(void) {
     }
 
     /* 创建 accept 新的tcp或unix连接的事件处理函数，当accept有事件时，则调用该函数处理 */
-    if (createSocketAcceptHandler(&server.ipfd, acceptTcpHandler) != C_OK) {//原子创建accept文件事件handler来处理新的TCP或TLS连接请求，本质是把fd添加到底层的epoll里
+    if (createSocketAcceptHandler(&server.ipfd, acceptTcpHandler) != C_OK) {//原子创建 accept文件事件handler 来处理新的TCP或TLS连接请求，本质是把fd添加到底层的epoll里
         serverPanic("Unrecoverable error creating TCP socket accept handler.");
     }
     /* 创建 accept 新的tcp（tls）连接的事件处理函数，当accept有事件时，则调用该函数处理 */
@@ -2623,7 +2622,9 @@ void initServer(void) {
      * no explicit limit in the user provided configuration we set a limit
      * at 3 GB using maxmemory with 'noeviction' policy'. This avoids
      * useless crashes of the Redis instance for out of memory. */
-    // 32位系统的最大内存空间是4G，当配置文件里没写明maxmemory时，则默认把maxmemory设位3，且不设内存淘汰，也即内存满了后不会淘汰key，此时无法再写入任何数据
+    // 32位系统的最大内存空间是4G，当配置文件里没写明maxmemory时，
+    // 则默认把maxmemory设为3G，且不设内存淘汰，也即内存满了后不会淘汰key，
+    // 此时无法再写入任何数据
     if (server.arch_bits == 32 && server.maxmemory == 0) {
         serverLog(LL_WARNING,"Warning: 32 bit instance detected but no memory limit set. Setting 3 GB maxmemory limit with 'noeviction' policy now.");
         server.maxmemory = 3072LL*(1024*1024); /* 3 GB */
@@ -7047,7 +7048,7 @@ int main(int argc, char **argv) {
         serverLog(LL_WARNING, "Configuration loaded");
     }
 
-    initServer();//初始化server，核心，包含tcp连接监听初始化
+    initServer();//初始化server，核心，包含tcp连接监听初始化，eventLoop事件循环等
     if (background || server.pidfile) createPidFile();
     if (server.set_proc_title) redisSetProcTitle(NULL);
     redisAsciiArt();//打印redis logo

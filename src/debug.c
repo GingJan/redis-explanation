@@ -2087,13 +2087,17 @@ void watchdogSignalHandler(int sig, siginfo_t *info, void *secret) {
 /* Schedule a SIGALRM delivery after the specified period in milliseconds.
  * If a timer is already scheduled, this function will re-schedule it to the
  * specified time. If period is 0 the current timer is disabled. */
+/*
+ * 在指定period毫秒后触发SIGALRM信号，如果已经设置了定时器timer，
+ * 则会重新设置定时时间，如果period是0，则关闭当前定时器timer
+ */
 void watchdogScheduleSignal(int period) {
     struct itimerval it;
 
     /* Will stop the timer if period is 0. */
     it.it_value.tv_sec = period/1000;//开始计算的时间值
     it.it_value.tv_usec = (period%1000)*1000;
-    /* Don't automatically restart. */
+    /* 不要自动重启 Don't automatically restart. */
     it.it_interval.tv_sec = 0;//当interval=0时，则不会重启下一次定时，若为n，则过了n sec/usec 后，触发一个信号，然后再进入下一次定时
     it.it_interval.tv_usec = 0;
 
@@ -2119,12 +2123,12 @@ void applyWatchdogPeriod() {
         sigemptyset(&act.sa_mask);
         act.sa_flags = 0;
         act.sa_handler = SIG_IGN;//忽略SIGALRM信号
-        sigaction(SIGALRM, &act, NULL);
+        sigaction(SIGALRM, &act, NULL);//忽略SIGALRM信号
     } else {
         /* Setup the signal handler. */
         sigemptyset(&act.sa_mask);
         act.sa_flags = SA_SIGINFO;
-        act.sa_sigaction = watchdogSignalHandler;//SIGALRM信号的处理函数
+        act.sa_sigaction = watchdogSignalHandler;//注册SIGALRM信号的处理函数
         sigaction(SIGALRM, &act, NULL);
 
         /* If the configured period is smaller than twice the timer period, it is

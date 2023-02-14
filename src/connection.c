@@ -234,6 +234,13 @@ static int connSocketAccept(connection *conn, ConnectionCallbackFunc accept_hand
  * CONN_FLAG_WRITE_BARRIER set. This will ensure that the write handler is
  * always called before and not after the read handler in a single event
  * loop.
+ *
+ * 注册write handler，当连接conn可写时会被调用，如果传入func=NULL，则已有的handler会被删除
+ * barrier 标识表示是否需要写屏障，当是CONN_FLAG_WRITE_BARRIER时，
+ * 在一个循环里，先处理写handler，再处理读handler
+ *
+ * 创建文件事件，并往底层epoll添加/注册fd监听
+ * barrier=1时，则
  */
 static int connSocketSetWriteHandler(connection *conn, ConnectionCallbackFunc func, int barrier) {
     if (func == conn->write_handler) return C_OK;

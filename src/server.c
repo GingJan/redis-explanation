@@ -2467,7 +2467,7 @@ void initServer(void) {
     adjustOpenFilesLimit();
     const char *clk_msg = monotonicInit();
     serverLog(LL_NOTICE, "monotonic clock: %s", clk_msg);
-    server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);//创建 事件循环 实例，核心
+    server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);//创建 事件循环eventLoop 实例，核心
     if (server.el == NULL) {//当无法创建 事件循环 实例时 报错&退出
         serverLog(LL_WARNING, "Failed creating the event loop. Error message: '%s'", strerror(errno));
         exit(1);

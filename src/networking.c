@@ -134,7 +134,8 @@ client *createClient(connection *conn) {
         connSetReadHandler(conn, readQueryFromClient);
         connSetPrivateData(conn, c);
     }
-    c->buf = zmalloc(PROTO_REPLY_CHUNK_BYTES);
+
+    c->buf = zmalloc(PROTO_REPLY_CHUNK_BYTES);//为c的输出缓冲区分配空间
     selectDb(c,0);//默认选db0
     uint64_t client_id;
     atomicGetIncr(server.next_client_id, client_id, 1);
@@ -143,7 +144,7 @@ client *createClient(connection *conn) {
     c->conn = conn;
     c->name = NULL;
     c->bufpos = 0;
-    c->buf_usable_size = zmalloc_usable_size(c->buf);
+    c->buf_usable_size = zmalloc_usable_size(c->buf);//输出缓冲区的可用字节
     c->buf_peak = c->buf_usable_size;
     c->buf_peak_last_reset_time = server.unixtime;
     c->ref_repl_buf_node = NULL;
@@ -214,7 +215,7 @@ client *createClient(connection *conn) {
     listSetMatchMethod(c->pubsub_patterns,listMatchObjects);
     c->mem_usage_bucket = NULL;
     c->mem_usage_bucket_node = NULL;
-    if (conn) linkClient(c);
+    if (conn) linkClient(c);//把c添加到server.clients链表，方便统一管理
     initClientMultiState(c);
     return c;
 }
@@ -226,11 +227,10 @@ void installClientWriteHandler(client *c) {
      * so that in the middle of receiving the query, and serving it
      * to the client, we'll call beforeSleep() that will do the
      * actual fsync of AOF to disk. the write barrier ensures that. */
-    if (server.aof_state == AOF_ON &&
-        server.aof_fsync == AOF_FSYNC_ALWAYS)
-    {
+    if (server.aof_state == AOF_ON && server.aof_fsync == AOF_FSYNC_ALWAYS) {//aof实时刷盘
         ae_barrier = 1;
     }
+
     if (connSetWriteHandlerWithBarrier(c->conn, sendReplyToClient, ae_barrier) == C_ERR) {
         freeClientAsync(c);
     }

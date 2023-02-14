@@ -2595,7 +2595,9 @@ void handleLinkIOError(clusterLink *link) {
 
 /* Send data. This is handled using a trivial send buffer that gets
  * consumed by write(). We don't try to optimize this for speed too much
- * as this is a very low traffic channel. */
+ * as this is a very low traffic channel.
+ * 发送数据
+ * */
 void clusterWriteHandler(connection *conn) {
     clusterLink *link = connGetPrivateData(conn);
     ssize_t nwritten;
@@ -2736,7 +2738,11 @@ void clusterReadHandler(connection *conn) {
  *
  * It is guaranteed that this function will never have as a side effect
  * the link to be invalidated, so it is safe to call this function
- * from event handlers that will do stuff with the same link later. */
+ * from event handlers that will do stuff with the same link later.
+ *
+ * 写数据入发送缓冲区
+ *
+ * */
 void clusterSendMessage(clusterLink *link, unsigned char *msg, size_t msglen) {
     if (sdslen(link->sndbuf) == 0 && msglen != 0)
         connSetWriteHandlerWithBarrier(link->conn, clusterWriteHandler, 1);

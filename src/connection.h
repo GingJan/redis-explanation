@@ -187,7 +187,12 @@ static inline int connSetReadHandler(connection *conn, ConnectionCallbackFunc fu
  * cleared when write handler is changed or removed.
  * With barrier enabled, we never fire the event if the read handler already
  * fired in the same event loop iteration. Useful when you want to persist
- * things to disk before sending replies, and want to do that in a group fashion. */
+ * things to disk before sending replies, and want to do that in a group fashion.
+ *
+ * 设置一个write handler，并可设置写屏蔽开关，当write handler被移除时，该flag也会被清理
+ * 当屏障开启时，若在本次事件循环迭代里，read handler已经被调用，那事件的写handler不会调用
+ * 当你在发送数据给其他redis副本前，想持久化一些数据到磁盘或以组的方式发送时，可开启写屏障
+ * */
 static inline int connSetWriteHandlerWithBarrier(connection *conn, ConnectionCallbackFunc func, int barrier) {
     return conn->type->set_write_handler(conn, func, barrier);
 }

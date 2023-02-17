@@ -129,7 +129,7 @@ client *createClient(connection *conn) {
     // 当命令在其他上下文内执行时（如lua脚本）则需要创建无连接的client
     if (conn) {
         connEnableTcpNoDelay(conn);//开始tcp数据实时传输，即允许数据以多个小包形式在网络上传输
-        if (server.tcpkeepalive)//如果开启了长连接心跳
+        if (server.tcpkeepalive)//如果开启了长连接心跳，则设置心跳间隔
             connKeepAlive(conn,server.tcpkeepalive);
         connSetReadHandler(conn, readQueryFromClient);
         connSetPrivateData(conn, c);
@@ -1299,7 +1299,7 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
         return;
     }
 
-    /* 创建client实例 Create connection and client */
+    /* 传入conn实例，创建对应client实例 Create connection and client */
     if ((c = createClient(conn)) == NULL) {
         serverLog(LL_WARNING,
             "Error registering fd event for the new client: %s (conn: %s)",
@@ -1338,7 +1338,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     UNUSED(mask);
     UNUSED(privdata);
 
-    while(max--) {//每次accept事件触发时，最多调用1000次系统accept()
+    while(max--) {//每次accept事件触发时，最多尝试1000次系统accept()
         cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);//cfd 连接fd，底层调用了accept()
         if (cfd == ANET_ERR) {
             if (errno != EWOULDBLOCK)
@@ -1346,7 +1346,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
             return;
         }
         serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
-        acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip);//用于tcp连接
+        acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip);//传入新的fd，并创建conn实例，用于tcp连接
     }
 }
 
@@ -1754,7 +1754,7 @@ int beforeNextClient(client *c) {
     /* Skip the client processing if we're in an IO thread, in that case we'll perform
        this operation later (this function is called again) in the fan-in stage of the threading mechanism */
     if (io_threads_op != IO_THREADS_OP_IDLE)
-        return C_OK;
+        return C_OK;//io线程处于空闲状态
     /* Handle async frees */
     /* Note: this doesn't make the server.clients_to_close list redundant because of
      * cases where we want an async free of a client other than myself. For example
@@ -2589,15 +2589,17 @@ int processInputBuffer(client *c) {
 
     return C_OK;
 }
-
+//当epoll触发读事件时，回调本函数对连接进行数据读取
 void readQueryFromClient(connection *conn) {
     client *c = connGetPrivateData(conn);
     int nread, big_arg = 0;
     size_t qblen, readlen;
 
     /* Check if we want to read from the client later when exiting from
-     * the event loop. This is the case if threaded I/O is enabled. */
-    if (postponeClientRead(c)) return;
+     * the event loop. This is the case if threaded I/O is enabled.
+     * 在退出事件循环时检查是否需要从客户端读取数据。如果启用了线程I/O，就会出现这种情况
+     * */
+    if (postponeClientRead(c)) return;//若这里返回，则说明使用多线程读写处理客户端的数据，主线的事件循环里不会去读client的数据
 
     /* Update total number of reads on server */
     atomicIncr(server.stat_total_reads_processed, 1);
@@ -2609,9 +2611,7 @@ void readQueryFromClient(connection *conn) {
      * at the risk of requiring more read(2) calls. This way the function
      * processMultiBulkBuffer() can avoid copying buffers to create the
      * Redis Object representing the argument. */
-    if (c->reqtype == PROTO_REQ_MULTIBULK && c->multibulklen && c->bulklen != -1
-        && c->bulklen >= PROTO_MBULK_BIG_ARG)
-    {
+    if (c->reqtype == PROTO_REQ_MULTIBULK && c->multibulklen && c->bulklen != -1 && c->bulklen >= PROTO_MBULK_BIG_ARG) {
         ssize_t remaining = (size_t)(c->bulklen+2)-(sdslen(c->querybuf)-c->qb_pos);
         big_arg = 1;
 
@@ -2625,7 +2625,7 @@ void readQueryFromClient(connection *conn) {
             readlen = PROTO_IOBUF_LEN;
     }
 
-    qblen = sdslen(c->querybuf);
+    qblen = sdslen(c->querybuf);//缓冲区的等待读取数据的长度
     if (!(c->flags & CLIENT_MASTER) && // master client's querybuf can grow greedy.
         (big_arg || sdsalloc(c->querybuf) < PROTO_IOBUF_LEN)) {
         /* When reading a BIG_ARG we won't be reading more than that one arg
@@ -2633,29 +2633,31 @@ void readQueryFromClient(connection *conn) {
          * need, so using the non-greedy growing. For an initial allocation of
          * the query buffer, we also don't wanna use the greedy growth, in order
          * to avoid collision with the RESIZE_THRESHOLD mechanism. */
-        c->querybuf = sdsMakeRoomForNonGreedy(c->querybuf, readlen);
+        c->querybuf = sdsMakeRoomForNonGreedy(c->querybuf, readlen);//非贪婪式扩容 对c->querybuf扩容需要的部分
     } else {
-        c->querybuf = sdsMakeRoomFor(c->querybuf, readlen);
+        c->querybuf = sdsMakeRoomFor(c->querybuf, readlen);//贪婪式扩容 对c->querybuf扩容一倍
 
         /* Read as much as possible from the socket to save read(2) system calls. */
+        // 从socket尽量多读取数据，减少read()系统调用次数
         readlen = sdsavail(c->querybuf);
     }
-    nread = connRead(c->conn, c->querybuf+qblen, readlen);
-    if (nread == -1) {
+
+    nread = connRead(c->conn, c->querybuf+qblen, readlen);//调用read()系统函数，从连接里读取数据
+    if (nread == -1) {//连接出现异常
         if (connGetState(conn) == CONN_STATE_CONNECTED) {
             return;
         } else {
             serverLog(LL_VERBOSE, "Reading from client: %s",connGetLastError(c->conn));
-            freeClientAsync(c);
+            freeClientAsync(c);//连接的状态异常，则异步释放连接conn实例和对应client实例
             goto done;
         }
-    } else if (nread == 0) {
+    } else if (nread == 0) {//client已发起关闭连接操作
         if (server.verbosity <= LL_VERBOSE) {
             sds info = catClientInfoString(sdsempty(), c);
             serverLog(LL_VERBOSE, "Client closed connection %s", info);
             sdsfree(info);
         }
-        freeClientAsync(c);
+        freeClientAsync(c);//连接已被client关闭，异步释放连接conn实例和对应client实例
         goto done;
     }
 
@@ -2665,7 +2667,7 @@ void readQueryFromClient(connection *conn) {
 
     c->lastinteraction = server.unixtime;
     if (c->flags & CLIENT_MASTER) c->read_reploff += nread;
-    atomicIncr(server.stat_net_input_bytes, nread);
+    atomicIncr(server.stat_net_input_bytes, nread);//指标统计
     if (!(c->flags & CLIENT_MASTER) && sdslen(c->querybuf) > server.client_max_querybuf_len) {
         sds ci = catClientInfoString(sdsempty(),c), bytes = sdsempty();
 
@@ -2679,11 +2681,11 @@ void readQueryFromClient(connection *conn) {
 
     /* There is more data in the client input buffer, continue parsing it
      * and check if there is a full command to execute. */
-    if (processInputBuffer(c) == C_ERR)
+    if (processInputBuffer(c) == C_ERR)//说明c已经被释放
          c = NULL;
 
 done:
-    beforeNextClient(c);
+    beforeNextClient(c);//在处理下一个client前，要执行的操作
 }
 
 /* A Redis "Address String" is a colon separated ip:port pair.
@@ -3960,7 +3962,7 @@ int checkClientPauseTimeoutAndReturnIfPaused(void) {
  * The function returns the total number of events processed.
  *
  * 当被阻塞在不可中断的操作时，本函数可以从这些阻塞里跳脱出来并处理一些事件
- * 例如在开机并加载数据时，可通过本函数返回 -LOADING错误给client
+ * 例如在开机并加载数据时，可通过本函数返回 -LOADING错误 给client
  * 底层调用eventloop来处理事件
  * */
 void processEventsWhileBlocked(void) {
@@ -3981,9 +3983,7 @@ void processEventsWhileBlocked(void) {
     while (iterations--) {//最多尝试iterations次
         long long startval = server.events_processed_while_blocked;
         //ae_events 本次aeProcessEvents 处理的事件个数，以非阻塞的方式处理文件事件
-        long long ae_events = aeProcessEvents(server.el,
-            AE_FILE_EVENTS|AE_DONT_WAIT|
-            AE_CALL_BEFORE_SLEEP|AE_CALL_AFTER_SLEEP);
+        long long ae_events = aeProcessEvents(server.el,AE_FILE_EVENTS|AE_DONT_WAIT|AE_CALL_BEFORE_SLEEP|AE_CALL_AFTER_SLEEP);
         /* Note that server.events_processed_while_blocked will also get
          * incremented by callbacks called by the event loop handlers. */
         server.events_processed_while_blocked += ae_events;
@@ -4264,7 +4264,10 @@ int handleClientsWithPendingWritesUsingThreads(void) {
 /* Return 1 if we want to handle the client read later using threaded I/O.
  * This is called by the readable handler of the event loop.
  * As a side effect of calling this function the client is put in the
- * pending read clients and flagged as such. */
+ * pending read clients and flagged as such.
+ *
+ * 返回1则表示使用threaded I/O 进行client数据读写，
+ * */
 int postponeClientRead(client *c) {
     if (server.io_threads_active &&
         server.io_threads_do_reads &&
@@ -4295,7 +4298,7 @@ int postponeClientRead(client *c) {
 int handleClientsWithPendingReadsUsingThreads(void) {
     if (!server.io_threads_active || !server.io_threads_do_reads) return 0;
     int processed = listLength(server.clients_pending_read);
-    if (processed == 0) return 0;
+    if (processed == 0) return 0;//无等待读处理的client
 
     /* Distribute the clients across N different lists. */
     listIter li;
@@ -4344,7 +4347,7 @@ int handleClientsWithPendingReadsUsingThreads(void) {
 
         serverAssert(!(c->flags & CLIENT_BLOCKED));
 
-        if (beforeNextClient(c) == C_ERR) {
+        if (beforeNextClient(c) == C_ERR) {//c已被关闭/释放
             /* If the client is no longer valid, we avoid
              * processing the client later. So we just go
              * to the next. */

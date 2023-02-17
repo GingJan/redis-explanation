@@ -200,7 +200,7 @@ static int connSocketWritev(connection *conn, const struct iovec *iov, int iovcn
 static int connSocketRead(connection *conn, void *buf, size_t buf_len) {
     int ret = read(conn->fd, buf, buf_len);
     if (!ret) {
-        conn->state = CONN_STATE_CLOSED;
+        conn->state = CONN_STATE_CLOSED;//对端已关闭连接，即client无数据发送给server
     } else if (ret < 0 && errno != EAGAIN) {
         conn->last_errno = errno;
 
@@ -208,7 +208,7 @@ static int connSocketRead(connection *conn, void *buf, size_t buf_len) {
          * connected, not to mess with handler callbacks.
          */
         if (errno != EINTR && conn->state == CONN_STATE_CONNECTED)
-            conn->state = CONN_STATE_ERROR;
+            conn->state = CONN_STATE_ERROR;//连接异常
     }
 
     return ret;
@@ -265,10 +265,10 @@ static int connSocketSetReadHandler(connection *conn, ConnectionCallbackFunc fun
     if (func == conn->read_handler) return C_OK;
 
     conn->read_handler = func;
-    if (!conn->read_handler)
+    if (!conn->read_handler)//如果传入的func是空，则删除对该conn连接的监听（从epoll移除 ）
         aeDeleteFileEvent(server.el,conn->fd,AE_READABLE);
     else
-        //把本conn添加到epoll里监听可读事件，
+        //把本conn添加到epoll里监听可读事件，当有事件发生时，回调ae_handler函数
         if (aeCreateFileEvent(server.el,conn->fd,
                     AE_READABLE,conn->type->ae_handler,conn) == AE_ERR) return C_ERR;
     return C_OK;

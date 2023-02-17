@@ -538,7 +538,7 @@ static int anetGenericAccept(char *err, int s, struct sockaddr *sa, socklen_t *l
 
 /* Accept a connection and also make sure the socket is non-blocking, and CLOEXEC.
  * returns the new socket FD, or -1 on error. */
-// 接受一个连接请求，并确保socket是非阻塞的，同时是CLOEXEC
+// 接受一个连接请求，并确保socket是非阻塞的，且CLOEXEC
 // 返回一个新的 连接socket fd ，错误则返回-1
 // serversock 是监听fd
 int anetTcpAccept(char *err, int serversock, char *ip, size_t ip_len, int *port) {

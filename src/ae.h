@@ -97,7 +97,7 @@ typedef struct aeEventLoop {
     aeFileEvent *events; /* 已注册的事件，是一个数组，下标是fd */
     aeFiredEvent *fired; /* 被触发的事件，是一个数组，下标是fd */
     aeTimeEvent *timeEventHead; //时间事件链表 的头节点
-    int stop;
+    int stop;//是否停止，0否，1是
     void *apidata; /* 该字段用于存放对应系统创建的epoll实例 */
     aeBeforeSleepProc *beforesleep; // 在调用epoll_wait前执行
     aeBeforeSleepProc *aftersleep; // 在epoll_wait返回后执行

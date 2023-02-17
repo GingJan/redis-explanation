@@ -1557,6 +1557,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     handleBlockedClientsTimeout();
 
     /* We should handle pending reads clients ASAP after event loop. */
+    // 在进入下一次 epoll_wait()前，先调用多线程读写去处理等待IO的client数据
     handleClientsWithPendingReadsUsingThreads();
 
     /* Handle TLS pending data. (must be done before flushAppendOnlyFile) */
@@ -2969,7 +2970,7 @@ struct redisCommand *lookupCommandLogic(dict *commands, robj **argv, int argc, i
         return lookupSubcommand(base_cmd, argv[1]->ptr);
     }
 }
-
+//根据传入的参数，匹配到对应的命令
 struct redisCommand *lookupCommand(robj **argv, int argc) {
     return lookupCommandLogic(server.commands,argv,argc,0);
 }
@@ -3629,11 +3630,11 @@ int processCommand(client *c) {
      * such as wrong arity, bad command name and so forth. */
     c->cmd = c->lastcmd = c->realcmd = lookupCommand(c->argv,c->argc);
     sds err;
-    if (!commandCheckExistence(c, &err)) {
+    if (!commandCheckExistence(c, &err)) {//命令不存在
         rejectCommandSds(c, err);
         return C_OK;
     }
-    if (!commandCheckArity(c, &err)) {
+    if (!commandCheckArity(c, &err)) {//命令参数错误
         rejectCommandSds(c, err);
         return C_OK;
     }

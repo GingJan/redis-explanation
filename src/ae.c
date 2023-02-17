@@ -155,11 +155,11 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
     }
     zfree(eventLoop);//释放eventLoop的空间
 }
-//关闭事件循环
+//停止/关闭 事件循环
 void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
-// 创建文件事件
+// 创建文件事件，并往底层epoll_add注册监听fd
 //eventLoop：事件循环实例
 //fd：需要监听的fd
 //mask：需要监听的事件
@@ -353,8 +353,10 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
 
 /* 事件循环的核心函数，外层被一个while循环调用
  * 先处理每个在等待的时间事件，然后再处理每个在等待的文件事件
- * （可能有刚处理的时间事件注册的文件时间）.
- * 若无指定flags，本函数会sleep直到有文件事件触发或下一个时间事件发生
+ * （刚处理过的时间事件可能会注册新的文件事件）.
+ * 若无指定flags，本函数会sleep直到 有文件事件触发 或 下一个时间事件发生
+ *
+ * 底层是通过调用系统的epoll_wait()来实现
  *
  * 若 flags 是 0, 本函数不做任何逻辑并且立刻返回
  * 若 flags 有 AE_ALL_EVENTS 标志, 所有类型的事件都会被处理
@@ -364,7 +366,7 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
  * if flags has AE_CALL_AFTER_SLEEP set, aftersleep回调会被调用
  * if flags has AE_CALL_BEFORE_SLEEP set, beforesleep回调会被调用.
  *
- * 本函数返回 被处理事件 的个数，本函数底层是通过调用系统的epoll_wait()来实现 */
+ * 本函数返回 被处理事件 的个数 */
 int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 {
     int processed = 0, numevents;
@@ -498,7 +500,7 @@ int aeWait(int fd, int mask, long long milliseconds) {
         return retval;
     }
 }
-
+//启动事件循环
 void aeMain(aeEventLoop *eventLoop) {
     eventLoop->stop = 0;//事件循环的停止标识
     while (!eventLoop->stop) {

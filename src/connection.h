@@ -57,7 +57,7 @@ typedef enum {
 typedef void (*ConnectionCallbackFunc)(struct connection *conn);
 
 typedef struct ConnectionType {
-    void (*ae_handler)(struct aeEventLoop *el, int fd, void *clientData, int mask);
+    void (*ae_handler)(struct aeEventLoop *el, int fd, void *clientData, int mask);//当epoll有事件触发时，调用本函数
     int (*connect)(struct connection *conn, const char *addr, int port, const char *source_addr, ConnectionCallbackFunc connect_handler);
     int (*write)(struct connection *conn, const void *data, size_t data_len);
     int (*writev)(struct connection *conn, const struct iovec *iov, int iovcnt);
@@ -82,8 +82,8 @@ struct connection {
     int last_errno;
     void *private_data;//存着client
     ConnectionCallbackFunc conn_handler;
-    ConnectionCallbackFunc write_handler;
-    ConnectionCallbackFunc read_handler;
+    ConnectionCallbackFunc write_handler; //conn的写handler
+    ConnectionCallbackFunc read_handler; //conn的读handler
     int fd;
 };
 

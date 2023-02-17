@@ -511,7 +511,22 @@ static unsigned long evictionTimeLimitUs() {
     return ULONG_MAX;   /* No limit to eviction time */
 }
 
-/* Check that memory usage is within the current "maxmemory" limit.  If over
+/* 执行内存清理，淘汰无用的key
+ * 检查当前内存的使用量是否还在maxmemory限制内，如果超过限制，尝试通过淘汰数据来空出内存。
+ * redis的内存使用量有可能会突然增大导致超过限制，比如在分配大内存时（若hash table的resize），
+ * 或者手动修改了maxmemory。因此，在一段可控时间范围内进行淘汰key逻辑，否则在淘汰key时，redis无法响应外部请求
+ *
+ * 本函数的目标是逐次进行空间清理，而不是一次性释放足够的内存空间以达到maxmemory，因此
+ * 当未达到maxmemory时，会产生一个aeTimeProc事件，以继续进行key淘汰。
+ *
+ * 本函数应在执行命令前调用，如果返回EVICT_FAIL，会导致内存占用增大的命令会被拒绝执行
+ *
+ * 返回：
+ * EVICT_OK - 内存足够了
+ * EVICT_RUNNING - 内存依旧超过限制，但内存清理还在继续
+ * EVICT_FAIL - 内存依旧超过限制，但无可淘汰的key清理了
+ *
+ * Check that memory usage is within the current "maxmemory" limit.  If over
  * "maxmemory", attempt to free memory by evicting data (if it's safe to do so).
  *
  * It's possible for Redis to suddenly be significantly over the "maxmemory"

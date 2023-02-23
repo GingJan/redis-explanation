@@ -538,7 +538,7 @@ static int anetGenericAccept(char *err, int s, struct sockaddr *sa, socklen_t *l
 
 /* Accept a connection and also make sure the socket is non-blocking, and CLOEXEC.
  * returns the new socket FD, or -1 on error. */
-// 接受一个连接请求，并确保socket是非阻塞的，且CLOEXEC
+// 接受一个连接请求，并设置socket为非阻塞的和CLOEXEC
 // 返回一个新的 连接socket fd ，错误则返回-1
 // serversock 是监听fd
 int anetTcpAccept(char *err, int serversock, char *ip, size_t ip_len, int *port) {
@@ -546,7 +546,7 @@ int anetTcpAccept(char *err, int serversock, char *ip, size_t ip_len, int *port)
     struct sockaddr_storage sa;
     socklen_t salen = sizeof(sa);
 
-    //调用系统accept() 和 fcntl() 接受新连接并设置为非阻塞 CLOEXEC
+    //调用系统accept() 和 fcntl() 接受新连接并设置为非阻塞和CLOEXEC
     if ((fd = anetGenericAccept(err,serversock,(struct sockaddr*)&sa,&salen)) == ANET_ERR)
         return ANET_ERR;
 
@@ -554,8 +554,7 @@ int anetTcpAccept(char *err, int serversock, char *ip, size_t ip_len, int *port)
         struct sockaddr_in *s = (struct sockaddr_in *)&sa;
         if (ip) inet_ntop(AF_INET,(void*)&(s->sin_addr),ip,ip_len);
         if (port) *port = ntohs(s->sin_port);//客户端端口
-    } else {
-        //IPV6
+    } else {//IPV6
         struct sockaddr_in6 *s = (struct sockaddr_in6 *)&sa;
         if (ip) inet_ntop(AF_INET6,(void*)&(s->sin6_addr),ip,ip_len);
         if (port) *port = ntohs(s->sin6_port);

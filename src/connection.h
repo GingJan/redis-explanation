@@ -76,7 +76,7 @@ typedef struct ConnectionType {
 
 struct connection {
     ConnectionType *type;//存放方法的具体实现
-    ConnectionState state;
+    ConnectionState state;//当前conn连接的状态
     short int flags;
     short int refs;//当前conn正在被refs个handler处理中，当refs为0时，connection才可被释放，但可以先关闭连接close(fd)
     int last_errno;

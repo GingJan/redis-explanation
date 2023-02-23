@@ -2261,7 +2261,6 @@ int createSocketAcceptHandler(socketFds *sfd, aeFileProc *accept_handler) {
     for (j = 0; j < sfd->count; j++) {
         //对sfd->count多个监听fd创建accept文件事件并注册入事件循环server.el里（底层调用epoll_ct（EPOLL_CTL_ADD）），当accept有事件发生时，调用accept_handler处理
         if (aeCreateFileEvent(server.el, sfd->fd[j], AE_READABLE, accept_handler,NULL) == AE_ERR) {
-            /* Rollback */
             //accept文件事件创建失败，则从事件循环server.el里移除该文件事件（底层调用epoll_ct（EPOLL_CTL_DEL））
             for (j = j-1; j >= 0; j--) aeDeleteFileEvent(server.el, sfd->fd[j], AE_READABLE);
             return C_ERR;

@@ -99,7 +99,7 @@ void linkClient(client *c) {
     raxInsert(server.clients_index,(unsigned char*)&id,sizeof(id),c,NULL);
 }
 
-/* Initialize client authentication state.
+/* 初始化client认证状态 Initialize client authentication state.
  */
 static void clientSetDefaultAuth(client *c) {
     /* If the default user does not require authentication, the user is
@@ -117,34 +117,30 @@ int authRequired(client *c) {
                         !c->authenticated;
     return auth_required;
 }
-
+//对conn封装一层，创建client实例
 client *createClient(connection *conn) {
     client *c = zmalloc(sizeof(client));
 
-    /* passing NULL as conn it is possible to create a non connected client.
-     * This is useful since all the commands needs to be executed
-     * in the context of a client. When commands are executed in other
-     * contexts (for instance a Lua script) we need a non connected client. */
-    // conn可能为NULL，因为存在无连接的client，全部命令都需要在client的上下文内执行，
-    // 当命令在其他上下文内执行时（如lua脚本）则需要创建无连接的client
-    if (conn) {
-        connEnableTcpNoDelay(conn);//开始tcp数据实时传输，即允许数据以多个小包形式在网络上传输
-        if (server.tcpkeepalive)//如果开启了长连接心跳，则设置心跳间隔
-            connKeepAlive(conn,server.tcpkeepalive);
+    /* 当传入的conn为NULL时则说明在建立「无连接」client，因全部命令都需要在client的上下文内执行，
+     * 则当命令在其他上下文内执行时（如lua脚本）则需要创建无连接的client */
+    if (conn) {//非lua脚本伪client
+        connEnableTcpNoDelay(conn);//设置tcp数据实时传输，允许数据以多个小包形式在网络上传输
+        if (server.tcpkeepalive)//如果开启了长连接心跳
+            connKeepAlive(conn,server.tcpkeepalive);//设置心跳检测的间隔 server.tcpkeepalive
         connSetReadHandler(conn, readQueryFromClient);
         connSetPrivateData(conn, c);
     }
 
-    c->buf = zmalloc(PROTO_REPLY_CHUNK_BYTES);//为c的输出缓冲区分配空间
-    selectDb(c,0);//默认选db0
+    c->buf = zmalloc(PROTO_REPLY_CHUNK_BYTES);//为client的输出缓冲区buf 分配空间
+    selectDb(c,0);//连接建立时，创建的client实例默认选db=0
     uint64_t client_id;
-    atomicGetIncr(server.next_client_id, client_id, 1);
+    atomicGetIncr(server.next_client_id, client_id, 1);//更新下一个client的自增长id
     c->id = client_id;//获取当前id
     c->resp = 2;
     c->conn = conn;
     c->name = NULL;
     c->bufpos = 0;
-    c->buf_usable_size = zmalloc_usable_size(c->buf);//输出缓冲区的可用字节
+    c->buf_usable_size = zmalloc_usable_size(c->buf);//输出缓冲区可用字节
     c->buf_peak = c->buf_usable_size;
     c->buf_peak_last_reset_time = server.unixtime;
     c->ref_repl_buf_node = NULL;
@@ -1216,7 +1212,9 @@ void clientAcceptHandler(connection *conn) {
         return;
     }
 
-    /* If the server is running in protected mode (the default) and there
+    /* 如果server开启了保护模式（默认开启了）且没设置密码，也没绑定指定接口，则
+     * 不接受来自非环路地址的请求。同时返回信息告知用户如何修复
+     * If the server is running in protected mode (the default) and there
      * is no password set, nor a specific interface is bound, we don't accept
      * requests from non loopback interfaces. Instead we try to explain the
      * user what to do to fix it if needed. */
@@ -1277,12 +1275,11 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
      * Admission control will happen before a client is created and connAccept()
      * called, because we don't want to even start transport-level negotiation
      * if rejected. */
-    // 客户端的连接数量 + 集群内节点之间建立的数量 超过限制，则
+    // 客户端的连接数量 + 集群内节点之间建立的数量 超过限制，则不再接受新连接的建立
     if (listLength(server.clients) + getClusterConnectionsCount() >= server.maxclients) {
         char *err;
         if (server.cluster_enabled)
-            err = "-ERR max number of clients + cluster "
-                  "connections reached\r\n";
+            err = "-ERR max number of clients + cluster connections reached\r\n";
         else
             err = "-ERR max number of clients reached\r\n";
 
@@ -1291,7 +1288,7 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
          * is written and the connection will just drop. */
         /* 只是尽量尝试回写错误消息，无需检查write()函数返回的错误，因为此时连接可能已建立或未建立
          * 注意对于TLS连接，目前还未完成握手，所以无需写任何数据，并且连接会被丢弃 */
-        if (connWrite(conn,err,strlen(err)) == -1) {//回写连接conn的错误信息给client
+        if (connWrite(conn,err,strlen(err)) == -1) {//尝试回写连接conn的错误信息给client
             /* 不做任何处理，只是为了避免编译时的警告提示 Nothing to do, Just to avoid the warning... */
         }
         server.stat_rejected_conn++;
@@ -1299,7 +1296,7 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
         return;
     }
 
-    /* 传入conn实例，创建对应client实例 Create connection and client */
+    /* 传入conn实例，创建对应client实例 */
     if ((c = createClient(conn)) == NULL) {
         serverLog(LL_WARNING,
             "Error registering fd event for the new client: %s (conn: %s)",
@@ -1309,10 +1306,10 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
         return;
     }
 
-    /* Last chance to keep flags */
+    /* 设置flag Last chance to keep flags */
     c->flags |= flags;
 
-    /* Initiate accept.
+    /* 初始化accept Initiate accept.
      *
      * Note that connAccept() is free to do two things here:
      * 1. Call clientAcceptHandler() immediately;
@@ -1339,7 +1336,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     UNUSED(privdata);
 
     while(max--) {//每次accept事件触发时，最多尝试1000次系统accept()
-        cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);//cfd 连接fd，底层调用了accept()
+        cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);//cfd 新建立的连接的fd，底层调用了accept()
         if (cfd == ANET_ERR) {
             if (errno != EWOULDBLOCK)
                 serverLog(LL_WARNING, "Accepting client connection: %s", server.neterr);

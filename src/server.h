@@ -159,7 +159,7 @@ typedef long long ustime_t; /* microsecond time type. */
 
 /* Protocol and I/O related defines */
 #define PROTO_IOBUF_LEN         (1024*16)  /* IO缓冲区的大小 16K Generic I/O buffer size */
-#define PROTO_REPLY_CHUNK_BYTES (16*1024) /* 16k output buffer */
+#define PROTO_REPLY_CHUNK_BYTES (16*1024) /* 16k 的输出缓冲区 output buffer */
 #define PROTO_INLINE_MAX_SIZE   (1024*64) /* Max size of inline reads */
 #define PROTO_MBULK_BIG_ARG     (1024*32)
 #define PROTO_RESIZE_THRESHOLD  (1024*32) /* Threshold for determining whether to resize query buffer */
@@ -1116,7 +1116,7 @@ typedef struct client {
     time_t obuf_soft_limit_reached_time;
     uint64_t flags;         /* Client flags: CLIENT_* macros. */
     int authenticated;      /* Needed when the default user requires auth. */
-    int replstate;          /* Replication state if this is a slave. */
+    int replstate;          /* 如果本client是slave，这字段就存slave副本的状态 Replication state if this is a slave. */
     int repl_start_cmd_stream_on_ack; /* Install slave write handler on first ACK. */
     int repldbfd;           /* Replication DB file descriptor. */
     off_t repldboff;        /* Replication DB file offset. */
@@ -1511,7 +1511,7 @@ struct redisServer {
     int sofd;                   /* Unix socket file descriptor */
     uint32_t socket_mark_id;    /* ID for listen socket marking */
     socketFds cfd;              /* Cluster bus listening socket */
-    list *clients;              /* List of active clients */
+    list *clients;              /* 当前建立连接的client集合 List of active clients */
     list *clients_to_close;     /* 需要异步关闭的client Clients to close asynchronously */
     list *clients_pending_write; /* There is to write or install handler. */
     list *clients_pending_read;  /* 等待读取read buf的客户端队列 Client has pending read socket buffers. */
@@ -1552,7 +1552,7 @@ struct redisServer {
     /* Fields used only for stats */
     time_t stat_starttime;          /* 服务器启动时间 Server start time */
     long long stat_numcommands;     /* 已处理命令的个数 Number of processed commands */
-    long long stat_numconnections;  /* Number of connections received */
+    long long stat_numconnections;  /* 统计成功建立连接的数量 Number of connections received */
     long long stat_expiredkeys;     /* Number of expired keys */
     double stat_expired_stale_perc; /* Percentage of keys probably expired */
     long long stat_expired_time_cap_reached_count; /* Early expire cycle stops.*/
@@ -1577,7 +1577,7 @@ struct redisServer {
     long long stat_fork_time;       /* Time needed to perform latest fork() */
     double stat_fork_rate;          /* Fork rate in GB/sec. */
     long long stat_total_forks;     /* Total count of fork. */
-    long long stat_rejected_conn;   /* 拒绝新连接建立的次数 Clients rejected because of maxclients */
+    long long stat_rejected_conn;   /* 拒绝建立新连接的次数 Clients rejected because of maxclients */
     long long stat_sync_full;       /* Number of full resyncs with slaves. */
     long long stat_sync_partial_ok; /* Number of accepted PSYNC requests. */
     long long stat_sync_partial_err;/* Number of unaccepted PSYNC requests. */

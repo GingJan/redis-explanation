@@ -92,8 +92,8 @@ connection *connCreateSocket() {
  * is not in an error state (which is not possible for a socket connection,
  * but could but possible with other protocols).
  */
-connection *connCreateAcceptedSocket(int fd) {
-    connection *conn = connCreateSocket();
+connection *connCreateAcceptedSocket(int fd) {//对fd进行封装并返回一个conn实例
+    connection *conn = connCreateSocket();//为conn封装具体方法
     conn->fd = fd;
     conn->state = CONN_STATE_ACCEPTING;
     return conn;
@@ -312,7 +312,10 @@ static void connSocketEventHandler(struct aeEventLoop *el, int fd, void *clientD
      * in the beforeSleep() hook, like fsync'ing a file to disk,
      * before replying to a client.
      *
-     * 通常，是先执行可读事件的handler，
+     * 通常，是先执行可读事件的handler，再执行可写事件的，这有时候很有用，因为我们可能在
+     * 处理查询后立即回复响应
+     * 然而如果设置了WRITE_BARRIER标识，则把执行顺序倒转：先执行可写再执行可读事件
+     * 这也很有用，例如想在beforeSleep()前做些处理如在回复响应前执行fsync刷盘
      * */
     int invert = conn->flags & CONN_FLAG_WRITE_BARRIER;
 

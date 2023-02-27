@@ -1148,7 +1148,7 @@ typedef struct client {
     sds sockname;           /* Cached connection target address. */
     listNode *client_list_node; /* 存放clients链表的尾结点的指针 list node in client list */
     listNode *postponed_list_node; /* list node within the postponed list */
-    listNode *pending_read_list_node; /* list node in clients pending read list */
+    listNode *pending_read_list_node; /* clients_pending_read 的头结点 list node in clients pending read list */
     RedisModuleUserChangedFunc auth_callback; /* Module callback to execute
                                                * when the authenticated user
                                                * changes. */

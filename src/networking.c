@@ -4263,7 +4263,9 @@ int handleClientsWithPendingWritesUsingThreads(void) {
  * As a side effect of calling this function the client is put in the
  * pending read clients and flagged as such.
  *
- * 返回1则表示使用threaded I/O 进行client数据读写，
+ * 如果想在稍后用多线程IO读取client的数据，则返回1
+ * 本函数在eventloop内处理可读事件时被调用
+ * 调用本函数的副作用就是把 client 放到 clients_pending_read 等待队列里
  * */
 int postponeClientRead(client *c) {
     if (server.io_threads_active &&

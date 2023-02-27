@@ -232,7 +232,7 @@ long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds, aeTi
     te = zmalloc(sizeof(*te));
     if (te == NULL) return AE_ERR;
     te->id = id;
-    te->when = getMonotonicUs() + milliseconds * 1000;
+    te->when = getMonotonicUs() + milliseconds * 1000;//1s后执行
     te->timeProc = proc;
     te->finalizerProc = finalizerProc;
     te->clientData = clientData;

@@ -338,7 +338,7 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CLIENT_MODULE (1<<27) /* Non connected client used by some module. */
 #define CLIENT_PROTECTED (1<<28) /* Client should not be freed for now. */
 /* #define CLIENT_... (1<<29) currently unused, feel free to use in the future */
-#define CLIENT_PENDING_COMMAND (1<<30) /* Indicates the client has a fully
+#define CLIENT_PENDING_COMMAND (1<<30) /* 当前client是否已解析出完整的命令并等待该命令执行 Indicates the client has a fully
                                         * parsed command ready for execution. */
 #define CLIENT_TRACKING (1ULL<<31) /* Client enabled keys tracking in order to
                                    perform client side caching. */
@@ -375,8 +375,8 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define BLOCKED_NUM 8      /* Number of blocked states. */
 
 /* Client request types */
-#define PROTO_REQ_INLINE 1
-#define PROTO_REQ_MULTIBULK 2
+#define PROTO_REQ_INLINE 1 /* 单条命令型 */
+#define PROTO_REQ_MULTIBULK 2 /* 多条命令型，即MULTI命令类型 */
 
 /* Client classes for client limits, currently used only for
  * the max-client-output-buffer limit implementation. */
@@ -1087,8 +1087,8 @@ typedef struct client {
     robj *name;             /* As set by CLIENT SETNAME. */
     sds querybuf;           /* 用来存放client请求的缓冲区 Buffer we use to accumulate client queries. */
     size_t qb_pos;          /* The position we have read in querybuf. */
-    size_t querybuf_peak;   /* Recent (100ms or more) peak of querybuf size. */
-    int argc;               /* Num of arguments of current command. */
+    size_t querybuf_peak;   /* querybuf大小的顶峰值（每100ms+刷新一次）Recent (100ms or more) peak of querybuf size. */
+    int argc;               /* 当前命令的参数个数 Num of arguments of current command. */
     robj **argv;            /* Arguments of current command. */
     int argv_len;           /* Size of argv array (may be more than argc) */
     int original_argc;      /* Num of arguments of original command if arguments were rewritten. */
@@ -1112,7 +1112,7 @@ typedef struct client {
     time_t ctime;           /* Client creation time. */
     long duration;          /* Current command duration. Used for measuring latency of blocking/non-blocking cmds */
     int slot;               /* The slot the client is executing against. Set to -1 if no slot is being used */
-    time_t lastinteraction; /* Time of the last interaction, used for timeout */
+    time_t lastinteraction; /* 上次对本client进行操作的时间点，用于超时检测Time of the last interaction, used for timeout */
     time_t obuf_soft_limit_reached_time;
     uint64_t flags;         /* Client flags: CLIENT_* macros. */
     int authenticated;      /* Needed when the default user requires auth. */
@@ -1122,7 +1122,7 @@ typedef struct client {
     off_t repldboff;        /* Replication DB file offset. */
     off_t repldbsize;       /* Replication DB file size. */
     sds replpreamble;       /* Replication DB preamble. */
-    long long read_reploff; /* Read replication offset if this is a master. */
+    long long read_reploff; /* 复制偏移量 Read replication offset if this is a master. */
     long long reploff;      /* Applied replication offset if this is a master. */
     long long repl_applied; /* Applied replication data count in querybuf, if this is a replica. */
     long long repl_ack_off; /* Replication ack offset, if this is a slave. */
@@ -1533,7 +1533,7 @@ struct redisServer {
     dict *migrate_cached_sockets;/* MIGRATE cached sockets */
     redisAtomic uint64_t next_client_id; /* Next client unique ID. Incremental. */
     int protected_mode;         /* 是否接受外部的连接 Don't accept external connections. */
-    int io_threads_num;         /* Number of IO threads to use. */
+    int io_threads_num;         /* 启用的IO线程数量 Number of IO threads to use. */
     int io_threads_do_reads;    /* 是否用多线程IO来读取并解析数据 Read and parse from IO threads? */
     int io_threads_active;      /* 当前多线程IO是否激活 Is IO threads currently active? */
     long long events_processed_while_blocked; /* processEventsWhileBlocked() */

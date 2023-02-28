@@ -2429,7 +2429,8 @@ void commandProcessed(client *c) {
     }
 }
 
-/* This function calls processCommand(), but also performs a few sub tasks
+/* 本函数调用 processCommand()，但
+ * This function calls processCommand(), but also performs a few sub tasks
  * for the client that are useful in that context:
  *
  * 1. It sets the current client to the client 'c'.
@@ -2535,16 +2536,18 @@ int processInputBuffer(client *c) {
         if (c->argc == 0) {
             resetClient(c);
         } else {
-            /* If we are in the context of an I/O thread, we can't really
+            /* 如果当前函数是在IO线程的上下文里执行的，那么我们无法执行命令
+             * 能做的只有把CLIENT_PENDING_COMMAND标识设置到client的flag
+             * If we are in the context of an I/O thread, we can't really
              * execute the command here. All we can do is to flag the client
              * as one that needs to process the command. */
-            if (io_threads_op != IO_THREADS_OP_IDLE) {
+            if (io_threads_op != IO_THREADS_OP_IDLE) {//当前IO线程正在运行
                 serverAssert(io_threads_op == IO_THREADS_OP_READ);
-                c->flags |= CLIENT_PENDING_COMMAND;
+                c->flags |= CLIENT_PENDING_COMMAND;//标记当前client有等待执行的命令
                 break;
             }
 
-            /* We are finally ready to execute the command. */
+            /* 终于可以执行命令了 We are finally ready to execute the command. */
             if (processCommandAndResetClient(c) == C_ERR) {
                 /* If the client is no longer valid, we avoid exiting this
                  * loop and trimming the client buffer later. So we return
@@ -2587,6 +2590,12 @@ int processInputBuffer(client *c) {
     return C_OK;
 }
 //当epoll触发读事件时，回调本函数对连接进行数据读取
+/*
+ * 具体逻辑有
+ * 放入异步io线程读取client数据（可选）
+ * 统计已处理的读事件个数+1
+ *
+ */
 void readQueryFromClient(connection *conn) {
     client *c = connGetPrivateData(conn);
     int nread, big_arg = 0;
@@ -2602,7 +2611,8 @@ void readQueryFromClient(connection *conn) {
     atomicIncr(server.stat_total_reads_processed, 1);
 
     readlen = PROTO_IOBUF_LEN;
-    /* If this is a multi bulk request, and we are processing a bulk reply
+    /* 如果本次请求是MULTI命令
+     * If this is a multi bulk request, and we are processing a bulk reply
      * that is large enough, try to maximize the probability that the query
      * buffer contains exactly the SDS string representing the object, even
      * at the risk of requiring more read(2) calls. This way the function
@@ -2622,7 +2632,7 @@ void readQueryFromClient(connection *conn) {
             readlen = PROTO_IOBUF_LEN;
     }
 
-    qblen = sdslen(c->querybuf);//缓冲区的等待读取数据的长度
+    qblen = sdslen(c->querybuf);//缓冲区里等待被读取的数据的长度
     if (!(c->flags & CLIENT_MASTER) && // master client's querybuf can grow greedy.
         (big_arg || sdsalloc(c->querybuf) < PROTO_IOBUF_LEN)) {
         /* When reading a BIG_ARG we won't be reading more than that one arg
@@ -2639,7 +2649,7 @@ void readQueryFromClient(connection *conn) {
         readlen = sdsavail(c->querybuf);
     }
 
-    nread = connRead(c->conn, c->querybuf+qblen, readlen);//调用read()系统函数，从连接里读取数据
+    nread = connRead(c->conn, c->querybuf+qblen, readlen);//调用底层read()系统函数，从连接c->conn里读取readlen字节的数据到c->querybuf+qblen为起始地址的空间里
     if (nread == -1) {//连接出现异常
         if (connGetState(conn) == CONN_STATE_CONNECTED) {
             return;
@@ -2648,13 +2658,13 @@ void readQueryFromClient(connection *conn) {
             freeClientAsync(c);//连接的状态异常，则异步释放连接conn实例和对应client实例
             goto done;
         }
-    } else if (nread == 0) {//client已发起关闭连接操作
+    } else if (nread == 0) {//client端已发起 连接关闭 操作
         if (server.verbosity <= LL_VERBOSE) {
             sds info = catClientInfoString(sdsempty(), c);
             serverLog(LL_VERBOSE, "Client closed connection %s", info);
             sdsfree(info);
         }
-        freeClientAsync(c);//连接已被client关闭，异步释放连接conn实例和对应client实例
+        freeClientAsync(c);//连接已被对端client关闭，异步释放conn实例和对应client实例
         goto done;
     }
 
@@ -2676,7 +2686,8 @@ void readQueryFromClient(connection *conn) {
         goto done;
     }
 
-    /* There is more data in the client input buffer, continue parsing it
+    /* client的输入缓冲区还有数据，若是一条完整的命令，则继续读取并解析这些数据
+     * There is more data in the client input buffer, continue parsing it
      * and check if there is a full command to execute. */
     if (processInputBuffer(c) == C_ERR)//说明c已经被释放
          c = NULL;
@@ -4278,7 +4289,7 @@ int postponeClientRead(client *c) {
         !(c->flags & (CLIENT_MASTER|CLIENT_SLAVE|CLIENT_BLOCKED)) &&//且client不是master、slave、或者阻塞 类的
         io_threads_op == IO_THREADS_OP_IDLE)//且有空闲的线程
     {
-        //把client放入多线程异步读取的队列里等待处理
+        //把client放入多线程异步队列里等待处理
         listAddNodeHead(server.clients_pending_read,c);
         c->pending_read_list_node = listFirst(server.clients_pending_read);
         return 1;
@@ -4309,23 +4320,23 @@ int handleClientsWithPendingReadsUsingThreads(void) {
     listNode *ln;
     listRewind(server.clients_pending_read,&li);
     int item_id = 0;
-    while((ln = listNext(&li))) {//不client分配到不同的target_id线程的队列里，等待处理
+    while((ln = listNext(&li))) {//把client分配到不同的target_id线程的任务队列里，通过取模均匀分派到不同线程的任务队列里
         client *c = listNodeValue(ln);
         int target_id = item_id % server.io_threads_num;
-        listAddNodeTail(io_threads_list[target_id],c);
+        listAddNodeTail(io_threads_list[target_id],c);//把c加到线程i的任务队列的末尾
         item_id++;
     }
 
     /* Give the start condition to the waiting threads, by setting the
      * start condition atomic var. */
-    io_threads_op = IO_THREADS_OP_READ;//更新线程状态 为处理读取中
+    io_threads_op = IO_THREADS_OP_READ;//更新线程状态为 处理读任务
     for (int j = 1; j < server.io_threads_num; j++) {
         int count = listLength(io_threads_list[j]);
-        setIOPendingCount(j, count);
+        setIOPendingCount(j, count);//设置各个线程的任务队列里的任务个数
     }
 
     /* Also use the main thread to process a slice of clients. */
-    listRewind(io_threads_list[0],&li);//主线程也要处理client的读请求
+    listRewind(io_threads_list[0],&li);//主线程0也要处理client的读请求
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
         readQueryFromClient(c->conn);

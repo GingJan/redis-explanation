@@ -1450,7 +1450,9 @@ void blockingOperationEnds() {
  * and updates cronloops variable so that similarly to serverCron, the
  * run_with_period can be used.
  *
- * 本函数
+ * 阻塞时，需执行的定时任务
+ * 本函数在RDB和AOF加载期间 和 在lua脚本阻塞时，扮演着serverCron的角色？
+ * 本函数尝试在相同的server.hz频率内执行和serverCron类似的逻辑？
  * */
 void whileBlockedCron() {
     /* Here we may want to perform some cron jobs (normally done server.hz times
@@ -2651,7 +2653,7 @@ void initServer(void) {
 // 执行一些需要 加载了模块之后 才能进行初始化的对象 的初始化逻辑
 void InitServerLast() {
     bioInit();//初始化后台系统，创建对应后台线程
-    initThreadedIO();// 初始化 IO线程需要的数据结构
+    initThreadedIO();// 初始化 多线程IO
     set_jemalloc_bg_thread(server.jemalloc_bg_thread);
     server.initial_memory_usage = zmalloc_used_memory();
 }

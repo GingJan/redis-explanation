@@ -38,7 +38,7 @@
 
 static void setProtocolError(const char *errstr, client *c);
 int postponeClientRead(client *c);
-int ProcessingEventsWhileBlocked = 0; /* See processEventsWhileBlocked(). */
+int ProcessingEventsWhileBlocked = 0; /* See processEventsWhileBlocked(). */ //判断在当前阻塞态下是否有在处理事件
 
 /* Return the size consumed from the allocator, for the specified SDS string,
  * including internal fragmentation. This function is used in order to compute
@@ -2596,7 +2596,7 @@ void readQueryFromClient(connection *conn) {
      * the event loop. This is the case if threaded I/O is enabled.
      * 在退出事件循环时检查是否需要从客户端读取数据。如果启用了线程I/O，就会出现这种情况
      * */
-    if (postponeClientRead(c)) return;//若这里返回，则说明使用多线程读写处理客户端的数据，主线的事件循环里不会去读client的数据
+    if (postponeClientRead(c)) return;//若这里返回，则说明使用多线程异步读写客户端的数据，主线的事件循环里不会去读client的数据
 
     /* Update total number of reads on server */
     atomicIncr(server.stat_total_reads_processed, 1);
@@ -3959,8 +3959,11 @@ int checkClientPauseTimeoutAndReturnIfPaused(void) {
  * The function returns the total number of events processed.
  *
  * 当被阻塞在不可中断的操作时，本函数可以从这些阻塞里跳脱出来并处理一些事件
- * 例如在开机并加载数据时，可通过本函数返回 -LOADING错误 给client
- * 底层调用eventloop来处理事件
+ * 例如在开机加载数据时，如有请求进来，则可通过本函数返回 -LOADING错误 给对方
+ * 底层调用eventloop来处理事件，当收到事件被处理的确认信号时，会尝试调用4次event loop
+ * 以便进一步调用accept、read、write、close来处理请求
+ *
+ * 本函数返回总共处理了多少个事件的数量
  * */
 void processEventsWhileBlocked(void) {
     int iterations = 4; /* See the function top-comment. */
@@ -3977,7 +3980,7 @@ void processEventsWhileBlocked(void) {
      * specifically on a busy script during async_loading rdb, and scripts
      * that came from AOF. */
     ProcessingEventsWhileBlocked++;
-    while (iterations--) {//最多尝试iterations次
+    while (iterations--) {//最多尝试iterations次，尝试处理iteration个事件
         long long startval = server.events_processed_while_blocked;
         //ae_events 本次aeProcessEvents 处理的事件个数，以非阻塞的方式处理文件事件
         long long ae_events = aeProcessEvents(server.el,AE_FILE_EVENTS|AE_DONT_WAIT|AE_CALL_BEFORE_SLEEP|AE_CALL_AFTER_SLEEP);
@@ -3985,7 +3988,7 @@ void processEventsWhileBlocked(void) {
          * incremented by callbacks called by the event loop handlers. */
         server.events_processed_while_blocked += ae_events;
         long long events = server.events_processed_while_blocked - startval;
-        if (!events) break;
+        if (!events) break;//若本次处理的事件个数不为0，则不再继续处理事件
     }
 
     whileBlockedCron();
@@ -3995,21 +3998,21 @@ void processEventsWhileBlocked(void) {
 }
 
 /* ==========================================================================
- * Threaded I/O
+ * Threaded I/O 多线程IO多谢
  * ========================================================================== */
 
 #define IO_THREADS_MAX_NUM 128
 
-pthread_t io_threads[IO_THREADS_MAX_NUM];
-pthread_mutex_t io_threads_mutex[IO_THREADS_MAX_NUM];
-redisAtomic unsigned long io_threads_pending[IO_THREADS_MAX_NUM];
+pthread_t io_threads[IO_THREADS_MAX_NUM];//io_threads[0-128]线程id
+pthread_mutex_t io_threads_mutex[IO_THREADS_MAX_NUM];//当对线程i进行lock时，线程i会暂停运行
+redisAtomic unsigned long io_threads_pending[IO_THREADS_MAX_NUM];//线程i上的等待被处理的任务数量
 int io_threads_op;      /* IO_THREADS_OP_IDLE, IO_THREADS_OP_READ or IO_THREADS_OP_WRITE. */ // TODO: should access to this be atomic??!
 
 /* This is the list of clients each thread will serve when threaded I/O is
  * used. We spawn io_threads_num-1 threads, since one is the main thread
  * itself. */
-list *io_threads_list[IO_THREADS_MAX_NUM];
-
+list *io_threads_list[IO_THREADS_MAX_NUM];//0是主线程，这个变量用于存放每个线程对应需要处理的client，是一个任务队列
+//返回i线程上等待处理的任务数
 static inline unsigned long getIOPendingCount(int i) {
     unsigned long count = 0;
     atomicGetWithSync(io_threads_pending[i], count);
@@ -4020,7 +4023,7 @@ static inline void setIOPendingCount(int i, unsigned long count) {
     atomicSetWithSync(io_threads_pending[i], count);
 }
 
-void *IOThreadMain(void *myid) {
+void *IOThreadMain(void *myid) {//多线程 执行的逻辑，myid=本线程的id
     /* The ID is the thread number (from 0 to server.iothreads_num-1), and is
      * used by the thread to just manipulate a single sub-array of clients. */
     long id = (unsigned long)myid;
@@ -4028,7 +4031,7 @@ void *IOThreadMain(void *myid) {
 
     snprintf(thdname, sizeof(thdname), "io_thd_%ld", id);
     redis_set_thread_title(thdname);
-    redisSetCpuAffinity(server.server_cpulist);
+    redisSetCpuAffinity(server.server_cpulist);//设置线程和CPU的亲和性（绑定）
     makeThreadKillable();
 
     while(1) {
@@ -4038,8 +4041,8 @@ void *IOThreadMain(void *myid) {
         }
 
         /* Give the main thread a chance to stop this thread. */
-        if (getIOPendingCount(id) == 0) {
-            pthread_mutex_lock(&io_threads_mutex[id]);
+        if (getIOPendingCount(id) == 0) {//当本线程i上的任务处理完毕时，则进行短暂的互斥锁操作，以便留出间隙给主线程对本线程进行处理如停止
+            pthread_mutex_lock(&io_threads_mutex[id]);//当对线程i进行lock时，线程i会暂停运行
             pthread_mutex_unlock(&io_threads_mutex[id]);
             continue;
         }
@@ -4061,8 +4064,8 @@ void *IOThreadMain(void *myid) {
                 serverPanic("io_threads_op value is unknown");
             }
         }
-        listEmpty(io_threads_list[id]);
-        setIOPendingCount(id, 0);
+        listEmpty(io_threads_list[id]);//清空本线程的任务队列
+        setIOPendingCount(id, 0);//本线程的任务队列待处理任务为0
     }
 }
 
@@ -4095,7 +4098,7 @@ void initThreadedIO(void) {
         pthread_mutex_init(&io_threads_mutex[i],NULL);
         setIOPendingCount(i, 0);
         pthread_mutex_lock(&io_threads_mutex[i]); /* Thread will be stopped. */
-        if (pthread_create(&tid,NULL,IOThreadMain,(void*)(long)i) != 0) {
+        if (pthread_create(&tid,NULL,IOThreadMain,(void*)(long)i) != 0) {//创建线程，并设置线程的执行逻辑IOThreadMain，返回线程的tid
             serverLog(LL_WARNING,"Fatal: Can't initialize IO thread.");
             exit(1);
         }
@@ -4126,9 +4129,10 @@ void startThreadedIO(void) {
         pthread_mutex_unlock(&io_threads_mutex[j]);
     server.io_threads_active = 1;
 }
-
+//终止多线程io
 void stopThreadedIO(void) {
-    /* We may have still clients with pending reads when this function
+    /* 当在调用本函数时，clients_pending_read队列里可能还有client等待被处理，所以先把这些client处理完毕后，再终止多线程io
+     * We may have still clients with pending reads when this function
      * is called: handle them before stopping the threads. */
     handleClientsWithPendingReadsUsingThreads();
     serverAssert(server.io_threads_active == 1);
@@ -4268,12 +4272,13 @@ int handleClientsWithPendingWritesUsingThreads(void) {
  * 调用本函数的副作用就是把 client 放到 clients_pending_read 等待队列里
  * */
 int postponeClientRead(client *c) {
-    if (server.io_threads_active &&
-        server.io_threads_do_reads &&
-        !ProcessingEventsWhileBlocked &&
-        !(c->flags & (CLIENT_MASTER|CLIENT_SLAVE|CLIENT_BLOCKED)) &&
-        io_threads_op == IO_THREADS_OP_IDLE)
+    if (server.io_threads_active &&//开启了多线程读写
+        server.io_threads_do_reads &&//开启了多线程读
+        !ProcessingEventsWhileBlocked &&//且当前没有在处理事件
+        !(c->flags & (CLIENT_MASTER|CLIENT_SLAVE|CLIENT_BLOCKED)) &&//且client不是master、slave、或者阻塞 类的
+        io_threads_op == IO_THREADS_OP_IDLE)//且有空闲的线程
     {
+        //把client放入多线程异步读取的队列里等待处理
         listAddNodeHead(server.clients_pending_read,c);
         c->pending_read_list_node = listFirst(server.clients_pending_read);
         return 1;
@@ -4297,14 +4302,14 @@ int postponeClientRead(client *c) {
 int handleClientsWithPendingReadsUsingThreads(void) {
     if (!server.io_threads_active || !server.io_threads_do_reads) return 0;
     int processed = listLength(server.clients_pending_read);
-    if (processed == 0) return 0;//无等待读处理的client
+    if (processed == 0) return 0;//无等待异步读处理的client
 
     /* Distribute the clients across N different lists. */
     listIter li;
     listNode *ln;
     listRewind(server.clients_pending_read,&li);
     int item_id = 0;
-    while((ln = listNext(&li))) {
+    while((ln = listNext(&li))) {//不client分配到不同的target_id线程的队列里，等待处理
         client *c = listNodeValue(ln);
         int target_id = item_id % server.io_threads_num;
         listAddNodeTail(io_threads_list[target_id],c);
@@ -4313,26 +4318,26 @@ int handleClientsWithPendingReadsUsingThreads(void) {
 
     /* Give the start condition to the waiting threads, by setting the
      * start condition atomic var. */
-    io_threads_op = IO_THREADS_OP_READ;
+    io_threads_op = IO_THREADS_OP_READ;//更新线程状态 为处理读取中
     for (int j = 1; j < server.io_threads_num; j++) {
         int count = listLength(io_threads_list[j]);
         setIOPendingCount(j, count);
     }
 
     /* Also use the main thread to process a slice of clients. */
-    listRewind(io_threads_list[0],&li);
+    listRewind(io_threads_list[0],&li);//主线程也要处理client的读请求
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
         readQueryFromClient(c->conn);
     }
-    listEmpty(io_threads_list[0]);
+    listEmpty(io_threads_list[0]);//清空主线程任务队列的任务
 
     /* Wait for all the other threads to end their work. */
     while(1) {
         unsigned long pending = 0;
         for (int j = 1; j < server.io_threads_num; j++)
             pending += getIOPendingCount(j);
-        if (pending == 0) break;
+        if (pending == 0) break;//当全部线程的任务都处理完毕
     }
 
     io_threads_op = IO_THREADS_OP_IDLE;

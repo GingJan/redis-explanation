@@ -1515,7 +1515,7 @@ static void sendGetackToReplicas(void) {
     replicationFeedSlaves(server.slaves, server.slaveseldb, argv, 3);
 }
 
-extern int ProcessingEventsWhileBlocked;
+extern int ProcessingEventsWhileBlocked;//判断在当前阻塞态下是否有在处理事件
 
 /* This function gets called every time Redis is entering the
  * main loop of the event driven library, that is, before to sleep
@@ -2650,10 +2650,10 @@ void initServer(void) {
  * Specifically, creation of threads due to a race bug in ld.so, in which
  * Thread Local Storage initialization collides with dlopen call.
  * see: https://sourceware.org/bugzilla/show_bug.cgi?id=19329 */
-// 执行一些需要 加载了模块之后 才能进行初始化的对象 的初始化逻辑
+// 执行一些需要 加载了模块之后 才能进行初始化的逻辑
 void InitServerLast() {
     bioInit();//初始化后台系统，创建对应后台线程
-    initThreadedIO();// 初始化 多线程IO
+    initThreadedIO();// 初始化 多线程IO，多个IO线程在后台就绪，等待client的数据
     set_jemalloc_bg_thread(server.jemalloc_bg_thread);
     server.initial_memory_usage = zmalloc_used_memory();
 }
@@ -3550,7 +3550,7 @@ int commandCheckExistence(client *c, sds *err) {
         return 1;
     if (!err)
         return 0;
-    if (isContainerCommandBySds(c->argv[0]->ptr)) {
+    if (isContainerCommandBySds(c->argv[0]->ptr)) {//该命令是否含子命令
         /* If we can't find the command but argv[0] by itself is a command
          * it means we're dealing with an invalid subcommand. Print Help. */
         sds cmd = sdsnew((char *)c->argv[0]->ptr);
@@ -3720,7 +3720,7 @@ int processCommand(client *c) {
      * However we don't perform the redirection if:
      * 1) The sender of this command is our master.
      * 2) The command has no key arguments. */
-    if (server.cluster_enabled &&
+    if (server.cluster_enabled &&//开启了集群模式
         !mustObeyClient(c) &&
         !(!(c->cmd->flags&CMD_MOVABLE_KEYS) && c->cmd->key_specs_num == 0 &&
           c->cmd->proc != execCommand))
@@ -3940,7 +3940,7 @@ int processCommand(client *c) {
         queueMultiCommand(c);
         addReply(c,shared.queued);
     } else {
-        call(c,CMD_CALL_FULL);
+        call(c,CMD_CALL_FULL);//执行命令
         c->woff = server.master_repl_offset;
         if (listLength(server.ready_keys))
             handleClientsBlockedOnKeys();

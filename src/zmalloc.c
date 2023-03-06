@@ -90,7 +90,7 @@ void zlibc_free(void *ptr) {
 #define update_zmalloc_stat_alloc(__n) atomicIncr(used_memory,(__n))//更新已使用内存，+1
 #define update_zmalloc_stat_free(__n) atomicDecr(used_memory,(__n))//更新已使用内存，-1
 
-static redisAtomic size_t used_memory = 0;//已使用内存（的字节数）在分配内存或释放时，都会累计到这个变量
+static redisAtomic size_t used_memory = 0;//已使用内存（的字节数） 在分配内存或释放时，都会累计到这个变量
 
 static void zmalloc_default_oom(size_t size) {
     fprintf(stderr, "zmalloc: Out of memory trying to allocate %zu bytes\n",

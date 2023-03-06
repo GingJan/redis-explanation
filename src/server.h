@@ -338,7 +338,7 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CLIENT_MODULE (1<<27) /* Non connected client used by some module. */
 #define CLIENT_PROTECTED (1<<28) /* Client should not be freed for now. */
 /* #define CLIENT_... (1<<29) currently unused, feel free to use in the future */
-#define CLIENT_PENDING_COMMAND (1<<30) /* 当前client是否已解析出完整的命令并等待该命令执行 Indicates the client has a fully
+#define CLIENT_PENDING_COMMAND (1<<30) /* 当前client已解析出完整的命令并等待该命令执行 Indicates the client has a fully
                                         * parsed command ready for execution. */
 #define CLIENT_TRACKING (1ULL<<31) /* Client enabled keys tracking in order to
                                    perform client side caching. */
@@ -1459,7 +1459,7 @@ struct redisServer {
     int hz;                     /* serverCron() calls frequency in hertz  serverCron()的调度频率，hz越大，serverCron调度越频繁？ */
     int in_fork_child;          /* indication that this is a fork child 当前进程是否fork出来的子进程*/
     redisDb *db;                /* 一个数组，存放所有数据库 */
-    dict *commands;             /* Command table */
+    dict *commands;             /* 命令表 Command table */
     dict *orig_commands;        /* Command table before command renaming. */
     aeEventLoop *el;            /* 事件循环实例 */
     rax *errors;                /* Errors table */

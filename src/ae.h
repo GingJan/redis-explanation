@@ -74,7 +74,7 @@ typedef struct aeFileEvent {
 typedef struct aeTimeEvent {
     long long id; /* 时间事件fd */
     monotime when;
-    aeTimeProc *timeProc;//时间事件的处理函数
+    aeTimeProc *timeProc;//时间事件的处理函数，触发时间事件时回调该函数
     aeEventFinalizerProc *finalizerProc;
     void *clientData;
     struct aeTimeEvent *prev;
@@ -105,7 +105,7 @@ typedef struct aeEventLoop {
 } aeEventLoop;
 
 /* Prototypes */
-aeEventLoop *aeCreateEventLoop(int setsize);// 创建 eventLoop实例，setsize是可监听event的数量，本函数有以下逻辑，申请空间，初始化事件的mask，当前系统对应的多路复用接口epoll_create以创建epoll
+aeEventLoop *aeCreateEventLoop(int setsize);// 创建 eventLoop实例，setsize是可监听event的数量，本函数有以下逻辑，申请空间，初始化事件的mask，当前对应系统（Linux？Windows？Unix？等）的多路复用接口epoll_create以创建epoll
 void aeDeleteEventLoop(aeEventLoop *eventLoop);
 void aeStop(aeEventLoop *eventLoop);
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask, aeFileProc *proc, void *clientData);

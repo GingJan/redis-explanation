@@ -94,8 +94,8 @@ void blockClient(client *c, int btype) {
 
     c->flags |= CLIENT_BLOCKED;
     c->btype = btype;
-    server.blocked_clients++;
-    server.blocked_clients_by_type[btype]++;
+    server.blocked_clients++;//统计被阻塞的客户端个数
+    server.blocked_clients_by_type[btype]++;//统计 阻塞类型 的个数
     addClientToTimeoutTable(c);
     if (btype == BLOCKED_POSTPONE) {
         listAddNodeTail(server.postponed_clients, c);
@@ -743,7 +743,7 @@ void blockForKeys(client *c, int btype, robj **keys, int numkeys, long count, ms
         /* Allocate our bkinfo structure, associated to each key the client
          * is blocked for. */
         bkinfo *bki = zmalloc(sizeof(*bki));
-        if (btype == BLOCKED_STREAM)
+        if (btype == BLOCKED_STREAM)//阻塞类型=stream
             bki->stream_id = ids[j];
 
         /* If the key already exists in the dictionary ignore it. */
@@ -754,21 +754,25 @@ void blockForKeys(client *c, int btype, robj **keys, int numkeys, long count, ms
         incrRefCount(keys[j]);
 
         /* And in the other "side", to map keys -> clients */
+        // 把客户端加到blocking_keys字典里
         de = dictFind(c->db->blocking_keys,keys[j]);
         if (de == NULL) {
             int retval;
 
             /* For every key we take a list of clients blocked for it */
+            //没有则创建链表，添加到字典
             l = listCreate();
-            retval = dictAdd(c->db->blocking_keys,keys[j],l);
+            retval = dictAdd(c->db->blocking_keys,keys[j],l);//把当前key和对应
             incrRefCount(keys[j]);
             serverAssertWithInfo(c,keys[j],retval == DICT_OK);
         } else {
             l = dictGetVal(de);
         }
+        //客户端追加到链表尾部
         listAddNodeTail(l,c);
         bki->listnode = listLast(l);
     }
+    //阻塞客户端
     blockClient(c,btype);
 }
 

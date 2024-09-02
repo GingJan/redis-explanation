@@ -82,7 +82,7 @@ struct dict {
     dictEntry **ht_table[2];
     unsigned long ht_used[2];
 
-    long rehashidx; /* rehashing not in progress if rehashidx == -1 */
+    long rehashidx; /* 当前rehash到的下标，当rehashidx=-1时则不在rehash中 rehashing not in progress if rehashidx == -1 */
 
     /* Keep small vars at end for optimal (minimal) struct padding */
     int16_t pauserehash; /* If >0 rehashing is paused (<0 indicates coding error) */

@@ -57,6 +57,7 @@ list *listCreate(void)
 }
 
 /* Remove all the elements from the list without destroying the list itself. */
+// 删除list里的全部元素（释放空间），但保留list本身
 void listEmpty(list *list)
 {
     unsigned long len;
@@ -67,7 +68,7 @@ void listEmpty(list *list)
     while(len--) {
         next = current->next;
         if (list->free) list->free(current->value);
-        zfree(current);
+        zfree(current);//释放元素的空间
         current = next;
     }
     list->head = list->tail = NULL;

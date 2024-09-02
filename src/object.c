@@ -356,21 +356,21 @@ void freeModuleObject(robj *o) {
 void freeStreamObject(robj *o) {
     freeStream(o->ptr);
 }
-
+//递增redis对象的引用次数
 void incrRefCount(robj *o) {
     if (o->refcount < OBJ_FIRST_SPECIAL_REFCOUNT) {
         o->refcount++;
     } else {
-        if (o->refcount == OBJ_SHARED_REFCOUNT) {
+        if (o->refcount == OBJ_SHARED_REFCOUNT) {//当前redis对象是全局对象
             /* Nothing to do: this refcount is immutable. */
-        } else if (o->refcount == OBJ_STATIC_REFCOUNT) {
+        } else if (o->refcount == OBJ_STATIC_REFCOUNT) {//在栈里的redis对象
             serverPanic("You tried to retain an object allocated in the stack");
         }
     }
 }
-
+//递减redis对象的引用次数
 void decrRefCount(robj *o) {
-    if (o->refcount == 1) {
+    if (o->refcount == 1) {//如果最后一个引用都被删除了，则释放内存空间
         switch(o->type) {
         case OBJ_STRING: freeStringObject(o); break;
         case OBJ_LIST: freeListObject(o); break;
@@ -536,7 +536,10 @@ void dismissStreamObject(robj *o, size_t size_hint) {
  * the size of an individual allocation is more than a page size of OS.
  * 'size_hint' is the size of serialized value. This method is not accurate, but
  * it can reduce unnecessary iteration for complex data types that are probably
- * not going to release any memory. */
+ * not going to release any memory.
+ *
+ * 当在fork子进程创建快照时，主进程和子进程共享同一块物理内存页
+ * */
 void dismissObject(robj *o, size_t size_hint) {
     /* madvise(MADV_DONTNEED) may not work if Transparent Huge Pages is enabled. */
     if (server.thp_enabled) return;

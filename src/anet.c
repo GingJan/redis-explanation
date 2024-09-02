@@ -60,7 +60,7 @@ static void anetSetError(char *err, const char *fmt, ...)
     vsnprintf(err, ANET_ERR_LEN, fmt, ap);
     va_end(ap);
 }
-//调用系统调用fcntl设置fd为非阻塞
+//系统调用fcntl设置fd为非阻塞
 int anetSetBlock(char *err, int fd, int non_block) {
     int flags;
 
@@ -88,7 +88,7 @@ int anetSetBlock(char *err, int fd, int non_block) {
     }
     return ANET_OK;
 }
-//调用系统调用fcntl设置fd为非阻塞
+//系统调用fcntl设置fd为非阻塞
 int anetNonBlock(char *err, int fd) {
     return anetSetBlock(err,fd,1);
 }
@@ -448,7 +448,7 @@ static int _anetTcpServer(char *err, int port, char *bindaddr, int af, int backl
         return ANET_ERR;
     }
 
-    //对多个地址端口建立监听（bind & listen）
+    //对多个地址端口建立监听（创建socket，bind & listen）
     for (p = servinfo; p != NULL; p = p->ai_next) {
         if ((s = socket(p->ai_family,p->ai_socktype,p->ai_protocol)) == -1)//调用系统函数socket，创建监听socket，s=新fd
             continue;

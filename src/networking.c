@@ -147,7 +147,7 @@ client *createClient(connection *conn) {
     c->ref_block_pos = 0;
     c->qb_pos = 0;
     c->querybuf = sdsempty();
-    c->querybuf_peak = 0;
+    c->querybuf_peak = 0;//创建client时的初始化
     c->reqtype = 0;
     c->argc = 0;
     c->argv = NULL;
@@ -228,7 +228,7 @@ void installClientWriteHandler(client *c) {
     }
 
     if (connSetWriteHandlerWithBarrier(c->conn, sendReplyToClient, ae_barrier) == C_ERR) {
-        freeClientAsync(c);
+        freeClientAsync(c);//异步关闭client
     }
 }
 
@@ -1870,10 +1870,13 @@ static int _writevToClient(client *c, ssize_t *nwritten) {
  * clients, it is called by writeToClient.
  * If we write successfully, it returns C_OK, otherwise, C_ERR is returned,
  * and 'nwritten' is an output parameter, it means how many bytes server write
- * to client. */
+ * to client.
+ *
+ * 该函数真正地把输出缓冲区的数据发出，由writeToClient函数调用，nwritten参数返回有多少个字节发出
+ * */
 int _writeToClient(client *c, ssize_t *nwritten) {
     *nwritten = 0;
-    if (getClientType(c) == CLIENT_TYPE_SLAVE) {
+    if (getClientType(c) == CLIENT_TYPE_SLAVE) {//客户端是从
         serverAssert(c->bufpos == 0 && listLength(c->reply) == 0);
 
         replBufBlock *o = listNodeValue(c->ref_repl_buf_node);
@@ -1909,13 +1912,13 @@ int _writeToClient(client *c, ssize_t *nwritten) {
         if (listLength(c->reply) == 0)
             serverAssert(c->reply_bytes == 0);
     } else if (c->bufpos > 0) {
-        *nwritten = connWrite(c->conn, c->buf + c->sentlen, c->bufpos - c->sentlen);
+        *nwritten = connWrite(c->conn, c->buf + c->sentlen, c->bufpos - c->sentlen);//发出数据
         if (*nwritten <= 0) return C_ERR;
         c->sentlen += *nwritten;
 
         /* If the buffer was sent, set bufpos to zero to continue with
          * the remainder of the reply. */
-        if ((int)c->sentlen == c->bufpos) {
+        if ((int)c->sentlen == c->bufpos) {//数据全部发送完毕，重置数值等待下一批数据
             c->bufpos = 0;
             c->sentlen = 0;
         }
@@ -1931,7 +1934,13 @@ int _writeToClient(client *c, ssize_t *nwritten) {
  *
  * This function is called by threads, but always with handler_installed
  * set to 0. So when handler_installed is set to 0 the function must be
- * thread safe. */
+ * thread safe.
+ *
+ * 把在输出缓冲区里的数据写到client，调用后如果client还是有效的则返回C_OK
+ * 如果因为某些原因导致client被释放了则返回C_ERR
+ *
+ * 当传入的handler_installed=0，则该函数是线程安全的
+ * */
 int writeToClient(client *c, int handler_installed) {
     /* Update total number of writes on server */
     atomicIncr(server.stat_total_writes_processed, 1);
@@ -1939,7 +1948,7 @@ int writeToClient(client *c, int handler_installed) {
     ssize_t nwritten = 0, totwritten = 0;
 
     while(clientHasPendingReplies(c)) {
-        int ret = _writeToClient(c, &nwritten);
+        int ret = _writeToClient(c, &nwritten);//真正发出数据
         if (ret == C_ERR) break;
         totwritten += nwritten;
         /* Note that we avoid to send more than NET_MAX_WRITES_PER_EVENT
@@ -1959,7 +1968,7 @@ int writeToClient(client *c, int handler_installed) {
              zmalloc_used_memory() < server.maxmemory) &&
             !(c->flags & CLIENT_SLAVE)) break;
     }
-    atomicIncr(server.stat_net_output_bytes, totwritten);
+    atomicIncr(server.stat_net_output_bytes, totwritten);//统计发出字节数
     if (nwritten == -1) {
         if (connGetState(c->conn) != CONN_STATE_CONNECTED) {
             serverLog(LL_VERBOSE,
@@ -2496,7 +2505,7 @@ int processPendingCommandAndInputBuffer(client *c) {
  * return C_ERR in case the client was freed during the processing */
 int processInputBuffer(client *c) {
     /* Keep processing while there is something in the input buffer */
-    while(c->qb_pos < sdslen(c->querybuf)) {
+    while(c->qb_pos < sdslen(c->querybuf)) {//还没读到querybuf的尾部
         /* Immediately abort if the client is in the middle of something. */
         if (c->flags & CLIENT_BLOCKED) break;
 
@@ -2519,16 +2528,16 @@ int processInputBuffer(client *c) {
 
         /* Determine request type when unknown. */
         if (!c->reqtype) {
-            if (c->querybuf[c->qb_pos] == '*') {
+            if (c->querybuf[c->qb_pos] == '*') {//redis的数据请求协议 *3\r\n$3\r\nSET\r\n$9\r\nredis-key\r\n$6\r\nvalue1\r\n
                 c->reqtype = PROTO_REQ_MULTIBULK;
             } else {
                 c->reqtype = PROTO_REQ_INLINE;
             }
         }
 
-        if (c->reqtype == PROTO_REQ_INLINE) {
+        if (c->reqtype == PROTO_REQ_INLINE) {//单命令请求（内联命令）
             if (processInlineBuffer(c) != C_OK) break;
-        } else if (c->reqtype == PROTO_REQ_MULTIBULK) {
+        } else if (c->reqtype == PROTO_REQ_MULTIBULK) {//多命令请求
             if (processMultibulkBuffer(c) != C_OK) break;
         } else {
             serverPanic("Unknown request type");
@@ -2674,21 +2683,21 @@ void readQueryFromClient(connection *conn) {
 
     sdsIncrLen(c->querybuf,nread);
     qblen = sdslen(c->querybuf);
-    if (c->querybuf_peak < qblen) c->querybuf_peak = qblen;
+    if (c->querybuf_peak < qblen) c->querybuf_peak = qblen; //刷新值
 
-    c->lastinteraction = server.unixtime;
-    if (c->flags & CLIENT_MASTER) c->read_reploff += nread;
+    c->lastinteraction = server.unixtime; //更新对本client操作的时间点
+    if (c->flags & CLIENT_MASTER) c->read_reploff += nread;//复制偏移量递增
     atomicIncr(server.stat_net_input_bytes, nread);//指标统计
 
-    //请求缓冲区的大小超过极限
+    //请求缓冲区c->querybuf的大小超过极限 server.client_max_querybuf_len，此时要关闭c并释放querybuf空间
     if (!(c->flags & CLIENT_MASTER) && sdslen(c->querybuf) > server.client_max_querybuf_len) {
         sds ci = catClientInfoString(sdsempty(),c), bytes = sdsempty();
 
         bytes = sdscatrepr(bytes,c->querybuf,64);
         serverLog(LL_WARNING,"Closing client that reached max query buffer length: %s (qbuf initial bytes: %s)", ci, bytes);
         sdsfree(ci);
-        sdsfree(bytes);
-        freeClientAsync(c);
+        sdsfree(bytes);//释放内存空间
+        freeClientAsync(c);//异步关闭c
         goto done;
     }
 
@@ -4021,18 +4030,19 @@ void processEventsWhileBlocked(void) {
  * Threaded I/O 多线程IO多谢
  * ========================================================================== */
 
-#define IO_THREADS_MAX_NUM 128
+#define IO_THREADS_MAX_NUM 128 //IO线程最大数量
 
-pthread_t io_threads[IO_THREADS_MAX_NUM];//io_threads[0-128]线程id
-pthread_mutex_t io_threads_mutex[IO_THREADS_MAX_NUM];//当对线程i进行lock时，线程i会暂停运行
-redisAtomic unsigned long io_threads_pending[IO_THREADS_MAX_NUM];//线程i上的等待被处理的任务数量
+pthread_t io_threads[IO_THREADS_MAX_NUM];//io_threads[1-127]线程id，0不在该数组里，因为0是主线程，元素是系统线程实例
+pthread_mutex_t io_threads_mutex[IO_THREADS_MAX_NUM];//存放各线程的线程互斥锁
+redisAtomic unsigned long io_threads_pending[IO_THREADS_MAX_NUM];//线程i上 等待IO处理的client的数量
 int io_threads_op;      /* IO_THREADS_OP_IDLE, IO_THREADS_OP_READ or IO_THREADS_OP_WRITE. */ // TODO: should access to this be atomic??!
 
-/* This is the list of clients each thread will serve when threaded I/O is
- * used. We spawn io_threads_num-1 threads, since one is the main thread
- * itself. */
-list *io_threads_list[IO_THREADS_MAX_NUM];//0是主线程，这个变量用于存放每个线程对应需要处理的client，是一个任务队列
-//返回i线程上等待处理的任务数
+/* 这个变量用于存放每个IO线程对应需要处理的client，是一个任务队列
+ * 0是主线程，生成 io_threads_num-1 个IO线程
+ */
+list *io_threads_list[IO_THREADS_MAX_NUM];
+
+//返回线程i上等待处理的任务个数
 static inline unsigned long getIOPendingCount(int i) {
     unsigned long count = 0;
     atomicGetWithSync(io_threads_pending[i], count);
@@ -4042,7 +4052,7 @@ static inline unsigned long getIOPendingCount(int i) {
 static inline void setIOPendingCount(int i, unsigned long count) {
     atomicSetWithSync(io_threads_pending[i], count);
 }
-//IO线程的入口函数
+//IO线程的入口函数，myid从1开始，最大 < IO_THREADS_MAX_NUM
 void *IOThreadMain(void *myid) {//多线程 执行的逻辑，myid=本线程的id
     /* The ID is the thread number (from 0 to server.iothreads_num-1), and is
      * used by the thread to just manipulate a single sub-array of clients. */
@@ -4056,8 +4066,8 @@ void *IOThreadMain(void *myid) {//多线程 执行的逻辑，myid=本线程的i
 
     while(1) {
         /* Wait for start */
-        for (int j = 0; j < 1000000; j++) {//等待任务
-            if (getIOPendingCount(id) != 0) break;
+        for (int j = 0; j < 1000000; j++) {//等待任务，自旋的方式
+            if (getIOPendingCount(id) != 0) break;//有任务了，退出自旋
         }
 
         /* Give the main thread a chance to stop this thread. */
@@ -4091,15 +4101,14 @@ void *IOThreadMain(void *myid) {//多线程 执行的逻辑，myid=本线程的i
 }
 
 /* Initialize the data structures needed for threaded I/O. */
-// 初始化 IO线程需要的数据结构
+/* 初始化IO线程需要的数据结构 */
 void initThreadedIO(void) {
-    server.io_threads_active = 0; /* We start with threads not active. */
+    server.io_threads_active = 0; // 开始时，IO线程未被激活 We start with threads not active.
 
-    /* Indicate that io-threads are currently idle */
-    io_threads_op = IO_THREADS_OP_IDLE;
+    /* 表示当前io线程是否空闲 Indicate that io-threads are currently idle */
+    io_threads_op = IO_THREADS_OP_IDLE; //IO线程初始化
 
-    /* Don't spawn any thread if the user selected a single thread:
-     * we'll handle I/O directly from the main thread. */
+    /* 如果用户设置了单线程模式，则不要生成其他线程，单线程模式下，是直接在主线程上进行IO处理 */
     if (server.io_threads_num == 1) return;
 
     if (server.io_threads_num > IO_THREADS_MAX_NUM) {
@@ -4108,20 +4117,24 @@ void initThreadedIO(void) {
         exit(1);
     }
 
-    /* Spawn and initialize the I/O threads. */
+    /* 生成并初始化IO线程 */
     for (int i = 0; i < server.io_threads_num; i++) {
-        /* Things we do for all the threads including the main thread. */
-        io_threads_list[i] = listCreate();
-        if (i == 0) continue; /* Thread 0 is the main thread. */
+        /* 为所有线程做的逻辑，包含主线程 */
+        io_threads_list[i] = listCreate(); // 创建链表，初始化
+        if (i == 0) continue; //0是主线程
 
-        /* Things we do only for the additional threads. */
+        /* 为除了主线程外的其他线程要做的逻辑 */
         pthread_t tid;
-        pthread_mutex_init(&io_threads_mutex[i],NULL);
-        setIOPendingCount(i, 0);
-        pthread_mutex_lock(&io_threads_mutex[i]); /* Thread will be stopped. */
+        pthread_mutex_init(&io_threads_mutex[i],NULL); // 初始化线程的互斥锁
+        setIOPendingCount(i, 0); // 初始换线程上等待IO处理的client数量
+        pthread_mutex_lock(&io_threads_mutex[i]); // 对IO线程上锁，到此线程会被暂停使用
 
-        //创建线程，新线程的id设置到&tid里，第三个参数传入函数，表示新线程从该函数地址开始执行，该函数只接收一个万能参数，通过第四个参数i传入到该函数里
-        if (pthread_create(&tid,NULL,IOThreadMain,(void*)(long)i) != 0) {
+        /*
+         * 创建线程，新线程的id设置到&tid里，第三个参数传线程的入口函数，
+         * 表示新线程从该函数地址开始执行，该入口函数只接收一个万能参数，
+         * 通过第四个参数i传入到该入口函数里
+         */
+        if (pthread_create(&tid,NULL,IOThreadMain,(void*)(long)i) != 0) { //系统调用，创建线程，如果返回!=0，则创建失败
             serverLog(LL_WARNING,"Fatal: Can't initialize IO thread.");
             exit(1);
         }
@@ -4145,18 +4158,18 @@ void killIOThreads(void) {
         }
     }
 }
-
+//启动多线IO
 void startThreadedIO(void) {
-    serverAssert(server.io_threads_active == 0);
+    serverAssert(server.io_threads_active == 0); //若当前IO线程已激活，则断言报错并退出
     for (int j = 1; j < server.io_threads_num; j++)
-        pthread_mutex_unlock(&io_threads_mutex[j]);
-    server.io_threads_active = 1;
+        pthread_mutex_unlock(&io_threads_mutex[j]); // 对各IO线程解锁
+    server.io_threads_active = 1;//标记IO线程已激活
 }
-//终止多线程io
+//终止/关闭 IO线程
 void stopThreadedIO(void) {
-    /* 当在调用本函数时，clients_pending_read队列里可能还有client等待被处理，所以先把这些client处理完毕后，再终止多线程io
-     * We may have still clients with pending reads when this function
-     * is called: handle them before stopping the threads. */
+    /* 当在调用本函数时，clients_pending_read队列里可能还有client等待被处理，
+     * 所以先把这些client处理完毕后，再终止IO线程
+     */
     handleClientsWithPendingReadsUsingThreads();
     serverAssert(server.io_threads_active == 1);
     for (int j = 1; j < server.io_threads_num; j++)
@@ -4179,7 +4192,7 @@ int stopThreadedIOIfNeeded(void) {
     /* Return ASAP if IO threads are disabled (single threaded mode). */
     if (server.io_threads_num == 1) return 1;
 
-    if (pending < (server.io_threads_num*2)) {
+    if (pending < (server.io_threads_num*2)) {//若正在等待IO处理的client数量不足 多线程IO 个数的2倍，则不启用多线程IO
         if (server.io_threads_active) stopThreadedIO();
         return 1;
     } else {
@@ -4204,7 +4217,7 @@ int handleClientsWithPendingWritesUsingThreads(void) {
     }
 
     /* Start threads if needed. */
-    if (!server.io_threads_active) startThreadedIO();
+    if (!server.io_threads_active) startThreadedIO();//启动/激活 多线程IO
 
     /* Distribute the clients across N different lists. */
     listIter li;
@@ -4217,7 +4230,7 @@ int handleClientsWithPendingWritesUsingThreads(void) {
 
         /* Remove clients from the list of pending writes since
          * they are going to be closed ASAP. */
-        if (c->flags & CLIENT_CLOSE_ASAP) {
+        if (c->flags & CLIENT_CLOSE_ASAP) {//如果当前client已关闭，则从clients_pending_write里删除ln，这块的数据就不用发送了
             listDelNode(server.clients_pending_write, ln);
             continue;
         }
@@ -4225,42 +4238,47 @@ int handleClientsWithPendingWritesUsingThreads(void) {
         /* Since all replicas and replication backlog use global replication
          * buffer, to guarantee data accessing thread safe, we must put all
          * replicas client into io_threads_list[0] i.e. main thread handles
-         * sending the output buffer of all replicas. */
+         * sending the output buffer of all replicas.
+         *
+         * 因为全部副本都是使用全局的副本缓冲，为了保证能线程安全地访问数据，
+         * 得把全部从客户端放入到io_threads_list[0]里，由主线程负责把响应缓冲区里的数据发送给其他副本/从
+         * */
         if (getClientType(c) == CLIENT_TYPE_SLAVE) {
-            listAddNodeTail(io_threads_list[0],c);
+            listAddNodeTail(io_threads_list[0],c);//把c放入到队尾
             continue;
         }
 
-        int target_id = item_id % server.io_threads_num;
-        listAddNodeTail(io_threads_list[target_id],c);
+        int target_id = item_id % server.io_threads_num;//target_id的范围是0~(io_threads_num-1)之间
+        listAddNodeTail(io_threads_list[target_id],c);//将需要发出响应数据的client均匀分配到每个IO线程上
         item_id++;
     }
 
     /* Give the start condition to the waiting threads, by setting the
      * start condition atomic var. */
-    io_threads_op = IO_THREADS_OP_WRITE;
+    io_threads_op = IO_THREADS_OP_WRITE;//标记当前IO线程正在操作写任务
     for (int j = 1; j < server.io_threads_num; j++) {
         int count = listLength(io_threads_list[j]);
         setIOPendingCount(j, count);
     }
 
     /* Also use the main thread to process a slice of clients. */
-    listRewind(io_threads_list[0],&li);
+    listRewind(io_threads_list[0],&li);//设置一个迭代器从io_thread_list[0]头部开始遍历
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
         writeToClient(c,0);
     }
-    listEmpty(io_threads_list[0]);
+    listEmpty(io_threads_list[0]);//清空io_threads_list[0]的元素
 
     /* Wait for all the other threads to end their work. */
+    // 死循环等待，直到其他IO线程处理完要发送的数据
     while(1) {
-        unsigned long pending = 0;
-        for (int j = 1; j < server.io_threads_num; j++)
+        unsigned long pending = 0;//正在等待IO处理的client的全部数量
+        for (int j = 1; j < server.io_threads_num; j++)//j从1开始，因为0在上面已经处理完毕了（0是主线程）
             pending += getIOPendingCount(j);
         if (pending == 0) break;
     }
 
-    io_threads_op = IO_THREADS_OP_IDLE;
+    io_threads_op = IO_THREADS_OP_IDLE;//等待发出的IO处理完毕，线程IO恢复空闲
 
     /* Run the list of clients again to install the write handler where
      * needed. */
@@ -4277,10 +4295,10 @@ int handleClientsWithPendingWritesUsingThreads(void) {
             installClientWriteHandler(c);
         }
     }
-    listEmpty(server.clients_pending_write);
+    listEmpty(server.clients_pending_write);//清空 server.clients_pending_write
 
     /* Update processed count on server */
-    server.stat_io_writes_processed += processed;
+    server.stat_io_writes_processed += processed;//统计数据
 
     return processed;
 }
@@ -4328,27 +4346,28 @@ int handleClientsWithPendingReadsUsingThreads(void) {
     if (processed == 0) return 0;//无等待异步读处理的client
 
     /* Distribute the clients across N different lists. */
-    listIter li;
+    /* 把大的client等待队列里的每个client添加到不同的io线程的任务队列里 */
+    listIter li;//迭代器
     listNode *ln;
-    listRewind(server.clients_pending_read,&li);
+    listRewind(server.clients_pending_read,&li);//初始化迭代器，指向目标结点
     int item_id = 0;
     while((ln = listNext(&li))) {//把client分配到不同的target_id线程的任务队列里，通过取模均匀分派到不同线程的任务队列里
-        client *c = listNodeValue(ln);
+        client *c = listNodeValue(ln);//ln里的value，就是指向client的指针
         int target_id = item_id % server.io_threads_num;
-        listAddNodeTail(io_threads_list[target_id],c);//把c加到线程i的任务队列的末尾
+        listAddNodeTail(io_threads_list[target_id],c);//把c追加到线程i的任务队列的末尾
         item_id++;
     }
 
     /* Give the start condition to the waiting threads, by setting the
      * start condition atomic var. */
-    io_threads_op = IO_THREADS_OP_READ;//更新线程状态为 处理读任务
+    io_threads_op = IO_THREADS_OP_READ;//更新线程状态为 正在处理read任务
     for (int j = 1; j < server.io_threads_num; j++) {
         int count = listLength(io_threads_list[j]);
         setIOPendingCount(j, count);//设置各个线程的任务队列里的任务个数
     }
 
-    /* Also use the main thread to process a slice of clients. */
-    listRewind(io_threads_list[0],&li);//主线程0也要处理client的读请求
+    /* 同时，也把主线程用上，用来处理client的读请求 */
+    listRewind(io_threads_list[0],&li);
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
         readQueryFromClient(c->conn);//从conn连接read数据到c->querybuf里

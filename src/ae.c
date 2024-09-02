@@ -224,7 +224,12 @@ int aeGetFileEvents(aeEventLoop *eventLoop, int fd) {
 
     return fe->mask;
 }
-//创建时间事件池（双向链表）
+//创建时间事件，并插入到eventloop的时间事件链表里（双向链表）
+// eventLoop 事件循环实例
+// milliseconds 时间事件触发间隔
+// proc 触发时间事件时的回调函数
+// clientData 数据
+// finalizerProc 时间事件关闭时的回调函数
 long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds, aeTimeProc *proc, void *clientData, aeEventFinalizerProc *finalizerProc) {
     long long id = eventLoop->timeEventNextId++;
     aeTimeEvent *te;
@@ -296,13 +301,13 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
         long long id;
 
         /* Remove events scheduled for deletion. */
-        // 删除id=-1的时间事件
+        // 删除id=-1的时间事件（也即该时间事件被删除）
         if (te->id == AE_DELETED_EVENT_ID) {
             aeTimeEvent *next = te->next;
             /* If a reference exists for this timer event,
              * don't free it. This is currently incremented
              * for recursive timerProc calls */
-            if (te->refcount) {//当refcount不为0 说明该te正在被timerProc函数处理
+            if (te->refcount) {//当refcount不为0 说明该te正在被timerProc函数处理，暂不进行释放
                 te = next;
                 continue;
             }
@@ -312,7 +317,7 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
                 eventLoop->timeEventHead = te->next;
             if (te->next)
                 te->next->prev = te->prev;
-            if (te->finalizerProc) {
+            if (te->finalizerProc) {//当时间事件被删除时，先执行finalizer函数，再释放时间事件
                 te->finalizerProc(eventLoop, te->clientData);
                 now = getMonotonicUs();
             }
@@ -336,11 +341,11 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
 
             id = te->id;
             te->refcount++;//当前时间事件正在被处理
-            retval = te->timeProc(eventLoop, id, te->clientData);
+            retval = te->timeProc(eventLoop, id, te->clientData);//调用回调函数
             te->refcount--;//当前时间事件处理完毕
             processed++;
             now = getMonotonicUs();
-            if (retval != AE_NOMORE) {
+            if (retval != AE_NOMORE) {//无需继续触发时间事件
                 te->when = now + retval * 1000;//更新下一次触发的时间点
             } else {//当返回的时NOMORE时，则把该时间事件删除
                 te->id = AE_DELETED_EVENT_ID;
@@ -366,7 +371,7 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
  * if flags has AE_CALL_AFTER_SLEEP set, aftersleep回调会被调用
  * if flags has AE_CALL_BEFORE_SLEEP set, beforesleep回调会被调用.
  *
- * 本函数返回 被处理事件 的个数 */
+ * 本函数返回 被处理事件 的个数（文件事件+时间事件） */
 int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 {
     int processed = 0, numevents;

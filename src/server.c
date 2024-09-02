@@ -574,11 +574,15 @@ void tryResizeHashTables(int dbid) {
  * of CPU time at every call of this function to perform some rehashing.
  *
  * The function returns 1 if some rehashing was performed, otherwise 0
- * is returned. */
+ * is returned.
+ *
+ * 对dbid采用渐进rehash的方式进行调整，在每次从hash表读写时，rehash一次
+ *
+ * */
 int incrementallyRehash(int dbid) {
     /* Keys dictionary */
-    if (dictIsRehashing(server.db[dbid].dict)) {
-        dictRehashMilliseconds(server.db[dbid].dict,1);
+    if (dictIsRehashing(server.db[dbid].dict)) {//该dict是否在rehash中
+        dictRehashMilliseconds(server.db[dbid].dict,1);//在1ms内执行多次rehash
         return 1; /* already used our millisecond for this loop... */
     }
     /* Expires */
@@ -679,20 +683,20 @@ long long getInstantaneousMetric(int metric) {
     return sum / STATS_METRIC_SAMPLES;
 }
 
-/* The client query buffer is an sds.c string that can end with a lot of
- * free space not used, this function reclaims space if needed.
- *
- * The function always returns 0 as it never terminates the client. */
+/* 调整client的querybuf空间
+ * client的querybuf是一个sds.c字符串，里面含有很多未使用的空间，如有必要，本函数会回收这些空间
+ * 本函数总是返回0，因为本函数不会关闭client
+ * 当querybuf的空闲空间>4K 且 （client的空闲时长超过2秒或（querybuf的大小超过PROTO_RESIZE_THRESHOLD阈值且querybuf的大小已超过旧querybuf_peak值2倍））
+ */
 int clientsCronResizeQueryBuffer(client *c) {
-    size_t querybuf_size = sdsalloc(c->querybuf);
-    time_t idletime = server.unixtime - c->lastinteraction;
+    size_t querybuf_size = sdsalloc(c->querybuf);//querybuf分配的空间大小
+    time_t idletime = server.unixtime - c->lastinteraction;//未与该c交互的时长
 
-    /* Only resize the query buffer if the buffer is actually wasting at least a
-     * few kbytes */
+    /* 当querybuf的空闲空间大于4K时，才对这些空间进行调整 */
     if (sdsavail(c->querybuf) > 1024*4) {
-        /* There are two conditions to resize the query buffer: */
+        /* 在以下这两种情况，才会调整querybuf的空间 */
         if (idletime > 2) {
-            /* 1) Query is idle for a long time. */
+            /* 1) 已经有很长时间（2秒）没与本c进行交互了 */
             c->querybuf = sdsRemoveFreeSpace(c->querybuf);
         } else if (querybuf_size > PROTO_RESIZE_THRESHOLD && querybuf_size/2 > c->querybuf_peak) {
             /* 2) Query buffer is too big for latest peak and is larger than
@@ -703,13 +707,11 @@ int clientsCronResizeQueryBuffer(client *c) {
             size_t resize = sdslen(c->querybuf);
             if (resize < c->querybuf_peak) resize = c->querybuf_peak;
             if (c->bulklen != -1 && resize < (size_t)c->bulklen) resize = c->bulklen;
-            c->querybuf = sdsResize(c->querybuf, resize);
+            c->querybuf = sdsResize(c->querybuf, resize);//调整querybuf大小为resize
         }
     }
 
-    /* Reset the peak again to capture the peak memory usage in the next
-     * cycle. */
-    c->querybuf_peak = sdslen(c->querybuf);
+    c->querybuf_peak = sdslen(c->querybuf);//刷新querybuf_peak值，该querybuf_peak更新后，用于下一周期的resize判断
     /* We reset to either the current used, or currently processed bulk size,
      * which ever is bigger. */
     if (c->bulklen != -1 && (size_t)c->bulklen > c->querybuf_peak)
@@ -901,8 +903,21 @@ void getExpansiveClientsInfo(size_t *in_usage, size_t *out_usage) {
  * of clients per second, turning this function into a source of latency.
  */
 #define CLIENTS_CRON_MIN_ITERATIONS 5
-// 需要在后台处理的和client有关的逻辑，例如关闭超时的客户端连接（包括被某个命令阻塞的连接）
-// 本函数会尽量处理全部client
+/* 本函数由serverCron()调用，用于在后台处理和client相关的维护工作，例如：
+ * 1.关闭超时的客户端连接（包括被某个命令阻塞的超时连接）
+ * 2.根据情况调整c->querybuf的大小
+ * 3.清理空闲连接
+ * 4.更新统计信息
+ *
+ * 本函数会每秒里尽量处理全部client
+ * 本函数的执行频率通常由 Redis 配置文件中的 hz 参数控制。
+ * 在正常情况下，clientsCron() 函数会按照 hz 参数设定的频率执行。然而，如果 Redis 服务器
+ * 正在执行某些导致延迟的事件（如慢命令），那么这些事件可能会占用较多的 CPU 时间，
+ * 导致 clientsCron() 的实际调用频率比 hz 设定的频率要低。
+ *
+ * 本函数内部调用的其他函数，都是非常快的，有时Redis有上万个客户端连接，而默认的server.hz频率是10
+ * 所以有时需要在一秒内处理上千个客户端连接的维护工作，使得本函数成了拖慢整个Redis系统的根源
+ */
 void clientsCron(void) {
     /* Try to process at least numclients/server.hz of clients
      * per call. Since normally (if there are no big latency events) this
@@ -937,6 +952,7 @@ void clientsCron(void) {
     ClientsPeakMemOutput[zeroidx] = 0;
 
 
+    //按照固定频率，处理每个client连接
     while(listLength(server.clients) && iterations--) {
         client *c;
         listNode *head;
@@ -951,7 +967,7 @@ void clientsCron(void) {
          * The protocol is that they return non-zero if the client was
          * terminated. */
         if (clientsCronHandleTimeout(c,now)) continue;
-        if (clientsCronResizeQueryBuffer(c)) continue;
+        if (clientsCronResizeQueryBuffer(c)) continue;//调整c->querybuf大小
         if (clientsCronResizeOutputBuffer(c,now)) continue;
 
         if (clientsCronTrackExpansiveClients(c, curr_peak_mem_usage_slot)) continue;
@@ -969,7 +985,7 @@ void clientsCron(void) {
 /* This function handles 'background' operations we are required to do
  * incrementally in Redis databases, such as active key expiring, resizing,
  * rehashing. */
-// 本函数处理 redis 数据库里，需要在后台渐进式执行的操作，例如key的过期，扩容，rehash等
+// 本函数处理 redis 数据库里，需要在后台渐进式执行的操作，例如key的过期，扩缩容，rehash等
 void databasesCron(void) {
     /* Expire keys by random sampling. Not required for slaves
      * as master will synthesize DELs for us. */
@@ -987,7 +1003,7 @@ void databasesCron(void) {
     /* Perform hash tables rehashing if needed, but only if there are no
      * other processes saving the DB on disk. Otherwise rehashing is bad
      * as will cause a lot of copy-on-write of memory pages. */
-    if (!hasActiveChildProcess()) {
+    if (!hasActiveChildProcess()) {//是否有正在执行其他逻辑的子进程（如bgsave，aof重写等）
         /* We use global counters so if we stop the computation at a given
          * DB we'll be able to start from the successive in the next
          * cron loop iteration. */
@@ -999,7 +1015,7 @@ void databasesCron(void) {
         /* Don't test more DBs than we have. */
         if (dbs_per_call > server.dbnum) dbs_per_call = server.dbnum;
 
-        /* Resize */
+        /* 调整db大小 Resize */
         for (j = 0; j < dbs_per_call; j++) {
             tryResizeHashTables(resize_db % server.dbnum);
             resize_db++;
@@ -1008,7 +1024,7 @@ void databasesCron(void) {
         /* Rehash */
         if (server.activerehashing) {
             for (j = 0; j < dbs_per_call; j++) {
-                int work_done = incrementallyRehash(rehash_db);
+                int work_done = incrementallyRehash(rehash_db);//执行渐进rehash
                 if (work_done) {
                     /* If the function did some work, stop here, we'll do
                      * more at the next cron loop. */
@@ -1274,8 +1290,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         }
     }
 
-    /* We need to do a few operations on clients asynchronously. */
-    // 需要给client做一些异步操作，比如关闭一些连接超时的client
+    // 对已和server建立连接的client做一些维护操作（异步），比如关闭一些连接超时的client
     clientsCron();
 
     /* Handle background operations on Redis databases. */
@@ -2300,7 +2315,7 @@ int listenToPort(int port, socketFds *sfd) {
     /* If we have no bind address, we don't listen on a TCP socket */
     // 如果没有绑定的地址，则不用进行TCP监听
     if (server.bindaddr_count == 0) return C_OK;
-    //建立多个fd的监听
+    //建立多个fd的监听（如果绑定了多个ip地址）
     for (j = 0; j < server.bindaddr_count; j++) {
         char* addr = bindaddr[j];
         int optional = *addr == '-';
@@ -2329,8 +2344,8 @@ int listenToPort(int port, socketFds *sfd) {
             return C_ERR;
         }
         if (server.socket_mark_id > 0) anetSetSockMarkId(NULL, sfd->fd[sfd->count], server.socket_mark_id);//anetSetSockMarkId作用？ todo
-        anetNonBlock(NULL,sfd->fd[sfd->count]);//把监听fd设置为非阻塞
-        anetCloexec(sfd->fd[sfd->count]);
+        anetNonBlock(NULL,sfd->fd[sfd->count]);//把监听fd设置为非阻塞（fcntl系统调用）
+        anetCloexec(sfd->fd[sfd->count]);//目的是让处理读写fd的线程无法继承监听线程的listen fd
         sfd->count++;
     }
     return C_OK;
@@ -2477,7 +2492,7 @@ void initServer(void) {
     server.db = zmalloc(sizeof(redisDb) * server.dbnum);//为数据库数组分配空间
 
     /* Open the TCP listening socket for the user commands. */
-    // 初始化并监听listen() fd 上的tcp连接请求
+    // 初始化并监听listen() fd 上的tcp连接请求，以接受用户命令
     if (server.port != 0 && listenToPort(server.port,&server.ipfd) == C_ERR) {
         /* Note: the following log text is matched by the test suite. */
         serverLog(LL_WARNING, "Failed listening on port %u (TCP), aborting.", server.port);
@@ -2491,7 +2506,7 @@ void initServer(void) {
     }
 
     /* 建立unix监听 Open the listening Unix domain socket. */
-    // 初始化并开始监听 fd 上的unix连接请求
+    // 初始化并开始监听 unix连接请求
     if (server.unixsocket != NULL) {
         unlink(server.unixsocket); /* don't care if this fails */
         server.sofd = anetUnixServer(server.neterr,server.unixsocket,(mode_t)server.unixsocketperm, server.tcp_backlog);//建立unix监听
@@ -2589,7 +2604,9 @@ void initServer(void) {
     server.last_sig_received = 0;
 
     /********* 以下是把各种（定时）时间事件，文件事件，等注册到事件循环里，本质是添加到底层的epoll里 ***********/
-    /* 创建timer定时时间事件，这是我们渐进地处理 各种后台操作 的方式，如客户端的超时，清理不访问的过期key等 */
+    /* 创建timer定时时间事件，这是我们渐进地处理 各种后台操作 的方式，如客户端的超时，清理不访问的过期key等
+     * 每毫秒调用一次serverCron函数
+     * */
     if (aeCreateTimeEvent(server.el, 1, serverCron, NULL, NULL) == AE_ERR) {
         serverPanic("Can't create event loop timers.");
         exit(1);
@@ -2650,10 +2667,12 @@ void initServer(void) {
  * Specifically, creation of threads due to a race bug in ld.so, in which
  * Thread Local Storage initialization collides with dlopen call.
  * see: https://sourceware.org/bugzilla/show_bug.cgi?id=19329 */
-// 执行一些需要 加载了模块之后 才能进行初始化的逻辑
+/* 执行一些需要在服务器初始化阶段完成的步骤（模块加载了之后）才能进行初始化的逻辑
+ * 需要注意，线程的创建时，由于在ld.so文件里的竞态bug
+ */
 void InitServerLast() {
     bioInit();//初始化后台系统，创建对应后台线程
-    initThreadedIO();// 初始化 多线程IO，多个IO线程在后台就绪，等待client的数据
+    initThreadedIO();// 创建并初始化 多线程IO，多个IO线程在后台就绪，等待client的数据
     set_jemalloc_bg_thread(server.jemalloc_bg_thread);
     server.initial_memory_usage = zmalloc_used_memory();
 }
@@ -6374,8 +6393,8 @@ void setupSignalHandlers(void) {
     sigemptyset(&act.sa_mask);
     act.sa_flags = 0;
     act.sa_handler = sigShutdownHandler;
-    sigaction(SIGTERM, &act, NULL);//注册信号处理函数
-    sigaction(SIGINT, &act, NULL);//注册信号处理函数
+    sigaction(SIGTERM, &act, NULL);//注册SIGTERM信号处理函数
+    sigaction(SIGINT, &act, NULL);//注册SIGINT信号处理函数
 
     sigemptyset(&act.sa_mask);
     act.sa_flags = SA_NODEFER | SA_RESETHAND | SA_SIGINFO;

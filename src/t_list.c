@@ -1037,6 +1037,7 @@ void blockingPopGenericCommand(client *c, robj **keys, int numkeys, int where, i
         != C_OK) return;
 
     /* Traverse all input keys, we take action only based on one key. */
+    // 遍历blpop key1 key2 key3 timeout0 所有命令里指定的key，当有一个key不为空时，则返回该key对应的元素
     for (j = 0; j < numkeys; j++) {
         key = keys[j];
         o = lookupKeyWrite(c->db, key);
@@ -1065,13 +1066,14 @@ void blockingPopGenericCommand(client *c, robj **keys, int numkeys, int where, i
         }
 
         /* Non empty list, this is like a normal [LR]POP. */
+        // list非空，则返回该list里的元素
         robj *value = listTypePop(o,where);
         serverAssert(value != NULL);
 
         addReplyArrayLen(c,2);
-        addReplyBulk(c,key);
-        addReplyBulk(c,value);
-        decrRefCount(value);
+        addReplyBulk(c,key);//注意是把key和value都返回
+        addReplyBulk(c,value);//注意是把key和value都返回
+        decrRefCount(value);//因为该元素被弹出，所以引用次数递减
         listElementsRemoved(c,key,where,o,1,NULL);
 
         /* Replicate it as an [LR]POP instead of B[LR]POP. */

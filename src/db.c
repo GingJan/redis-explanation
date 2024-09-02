@@ -46,7 +46,10 @@ int keyIsExpired(redisDb *db, robj *key);
 
 /* Update LFU when an object is accessed.
  * Firstly, decrement the counter if the decrement time is reached.
- * Then logarithmically increment the counter, and update the access time. */
+ * Then logarithmically increment the counter, and update the access time.
+ *
+ *
+ * */
 void updateLFU(robj *val) {
     unsigned long counter = LFUDecrAndReturn(val);
     counter = LFULogIncr(counter);
@@ -79,7 +82,7 @@ void updateLFU(robj *val) {
  * expired on replicas even if the master is lagging expiring our key via DELs
  * in the replication link. */
 robj *lookupKey(redisDb *db, robj *key, int flags) {
-    dictEntry *de = dictFind(db->dict,key->ptr);
+    dictEntry *de = dictFind(db->dict,key->ptr);//从db-dict字典里找到key字符串并返回对应的实体dictEntry
     robj *val = NULL;
     if (de) {
         val = dictGetVal(de);
@@ -104,10 +107,10 @@ robj *lookupKey(redisDb *db, robj *key, int flags) {
          * Don't do it if we have a saving child, as this will trigger
          * a copy on write madness. */
         if (!hasActiveChildProcess() && !(flags & LOOKUP_NOTOUCH)){
-            if (server.maxmemory_policy & MAXMEMORY_FLAG_LFU) {
+            if (server.maxmemory_policy & MAXMEMORY_FLAG_LFU) {//启用LRU淘汰策略
                 updateLFU(val);
             } else {
-                val->lru = LRU_CLOCK();
+                val->lru = LRU_CLOCK();//更新本次访问时间
             }
         }
 

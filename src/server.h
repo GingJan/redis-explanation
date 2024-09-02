@@ -172,7 +172,7 @@ typedef long long ustime_t; /* microsecond time type. */
  * of file descriptors we can handle are server.maxclients + RESERVED_FDS +
  * a few more to stay safe. Since RESERVED_FDS defaults to 32, we add 96
  * in order to make sure of not over provisioning more than 128 fds. */
-// 在配置eventLoop时，配置最大可处理的fd数量，该数量时 server.maxclients + CONFIG_MIN_RESERVED_FDS + 为了安全多加些许个数
+// 在配置eventLoop时，配置最大可处理的fd数量，该数量= server.maxclients + CONFIG_MIN_RESERVED_FDS + 为了安全多加些许个数
 // 因为 CONFIG_MIN_RESERVED_FDS默认是32，加上96确保不超过128
 #define CONFIG_FDSET_INCR (CONFIG_MIN_RESERVED_FDS+96)
 
@@ -365,8 +365,8 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 /* Client block type (btype field in client structure)
  * if CLIENT_BLOCKED flag is set. */
 #define BLOCKED_NONE 0    /* Not blocked, no CLIENT_BLOCKED flag set. */
-#define BLOCKED_LIST 1    /* BLPOP & co. */
-#define BLOCKED_WAIT 2    /* WAIT for synchronous replication. */
+#define BLOCKED_LIST 1    /* BLPOP指令而阻塞 BLPOP & co. */
+#define BLOCKED_WAIT 2    /* 等待副本同步而阻塞WAIT for synchronous replication. */
 #define BLOCKED_MODULE 3  /* Blocked by a loadable module. */
 #define BLOCKED_STREAM 4  /* XREAD. */
 #define BLOCKED_ZSET 5    /* BZPOP et al. */
@@ -381,11 +381,11 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 /* Client classes for client limits, currently used only for
  * the max-client-output-buffer limit implementation. */
 // 客户端类型
-#define CLIENT_TYPE_NORMAL 0 /* Normal req-reply clients + MONITORs */
-#define CLIENT_TYPE_SLAVE 1  /* Slaves. */
-#define CLIENT_TYPE_PUBSUB 2 /* Clients subscribed to PubSub channels. */
-#define CLIENT_TYPE_MASTER 3 /* Master. */
-#define CLIENT_TYPE_COUNT 4  /* Total number of client types. */
+#define CLIENT_TYPE_NORMAL 0 /* 普通的请求-响应型 + MONITOR型 Normal req-reply clients + MONITORs */
+#define CLIENT_TYPE_SLAVE 1  /* 从 Slaves. */
+#define CLIENT_TYPE_PUBSUB 2 /* 订阅了pubsub的客户端 Clients subscribed to PubSub channels. */
+#define CLIENT_TYPE_MASTER 3 /* 主 Master. */
+#define CLIENT_TYPE_COUNT 4  /* 客户端类型数量 Total number of client types. */
 #define CLIENT_TYPE_OBUF_COUNT 3 /* Number of clients to expose to output
                                     buffer configuration. Just the first
                                     three: normal, slave, pubsub. */
@@ -843,8 +843,8 @@ typedef struct RedisModuleDigest {
 #define LRU_CLOCK_MAX ((1<<LRU_BITS)-1) /* Max value of obj->lru */
 #define LRU_CLOCK_RESOLUTION 1000 /* LRU clock resolution in ms */
 
-#define OBJ_SHARED_REFCOUNT INT_MAX     /* Global object never destroyed. */
-#define OBJ_STATIC_REFCOUNT (INT_MAX-1) /* Object allocated in the stack. */
+#define OBJ_SHARED_REFCOUNT INT_MAX     /* 全局对象永不释放 Global object never destroyed. */
+#define OBJ_STATIC_REFCOUNT (INT_MAX-1) /* 在栈里分配空间的对象 Object allocated in the stack. */
 #define OBJ_FIRST_SPECIAL_REFCOUNT OBJ_STATIC_REFCOUNT
 typedef struct redisObject {
     unsigned type:4;//只用4位，redis数据类型 字符串OBJ_STRING，列表，Hash，集合等
@@ -854,7 +854,7 @@ typedef struct redisObject {
                             * and most significant 16 bits access time). */
     int refcount;//该redisObj实例被引用的次数，共享实例节约内存
     void *ptr;//指向的数据
-} robj;
+} robj;//redis对象
 
 /* The a string name for an object's type as listed above
  * Native types are checked against the OBJ_STRING, OBJ_LIST, OBJ_* defines,
@@ -915,13 +915,13 @@ typedef struct clusterSlotToKeyMapping clusterSlotToKeyMapping;
  * by integers from 0 (the default database) up to the max configured
  * database. The database number is the 'id' field in the structure. */
 typedef struct redisDb {
-    dict *dict;                 /* The keyspace for this DB */
-    dict *expires;              /* Timeout of keys with a timeout set */
-    dict *blocking_keys;        /* Keys with clients waiting for data (BLPOP)*/
+    dict *dict;                 /* keyspace 存放数据库所有键值对*/
+    dict *expires;              /* 存放key的过期时间 */
+    dict *blocking_keys;        /* 所有因类似BLPOP命令而阻塞的客户端会会被放入blocking_keys字典里，字典的键为被阻塞的key，值为客户端链表 Keys with clients waiting for data (BLPOP)*/
     dict *ready_keys;           /* Blocked keys that received a PUSH */
     dict *watched_keys;         /* WATCHED keys for MULTI/EXEC CAS */
-    int id;                     /* Database ID */
-    long long avg_ttl;          /* Average TTL, just for stats */
+    int id;                     /* 数据库序号0-15 Database ID */
+    long long avg_ttl;          /* 存放对象的平均TTL，用于统计 */
     unsigned long expires_cursor; /* Cursor of the active expire cycle. */
     list *defrag_later;         /* List of key names to attempt to defrag one by one, gradually. */
     clusterSlotToKeyMapping *slots_to_keys; /* slot槽到key的映射 Array of slots to keys. Only used in cluster mode (db 0). */
@@ -1080,17 +1080,17 @@ typedef struct {
 } clientMemUsageBucket;
 
 typedef struct client {
-    uint64_t id;            /* Client incremental unique ID. */
+    uint64_t id;            /* 客户端唯一自增长id，通过全局变量 server.next_client_id实现 Client incremental unique ID. */
     connection *conn;
-    int resp;               /* RESP protocol version. Can be 2 or 3. */
-    redisDb *db;            /* Pointer to currently SELECTed DB. */
+    int resp;               /* 响应协议的版本号 2或3 RESP protocol version. Can be 2 or 3. */
+    redisDb *db;            /* 使用select命令选中的db */
     robj *name;             /* As set by CLIENT SETNAME. */
     sds querybuf;           /* 用来存放client请求的缓冲区 Buffer we use to accumulate client queries. */
-    size_t qb_pos;          /* The position we have read in querybuf. */
-    size_t querybuf_peak;   /* querybuf大小的顶峰值（每100ms+刷新一次）Recent (100ms or more) peak of querybuf size. */
+    size_t qb_pos;          /* 当前已读到querybuf的位置 The position we have read in querybuf. */
+    size_t querybuf_peak;   /* 记录querybuf大小的顶峰值（每100+ms刷新一次），该值用于判断是否调整querybuf大小，Recent (100ms or more) peak of querybuf size. */
     int argc;               /* 当前命令的参数个数 Num of arguments of current command. */
-    robj **argv;            /* Arguments of current command. */
-    int argv_len;           /* Size of argv array (may be more than argc) */
+    robj **argv;            /* 当前命令的参数 Arguments of current command. */
+    int argv_len;           /* 上面argv（数组）字段的大小 Size of argv array (may be more than argc) */
     int original_argc;      /* Num of arguments of original command if arguments were rewritten. */
     robj **original_argv;   /* Arguments of original command if arguments were rewritten. */
     size_t argv_len_sum;    /* Sum of lengths of objects in argv list. */
@@ -1107,12 +1107,12 @@ typedef struct client {
     list *reply;            /* List of reply objects to send to the client. */
     unsigned long long reply_bytes; /* Tot bytes of objects in reply list. */
     list *deferred_reply_errors;    /* Used for module thread safe contexts. */
-    size_t sentlen;         /* Amount of bytes already sent in the current
+    size_t sentlen;         /* 已发出数据的字节数 Amount of bytes already sent in the current
                                buffer or object being sent. */
     time_t ctime;           /* Client creation time. */
     long duration;          /* Current command duration. Used for measuring latency of blocking/non-blocking cmds */
     int slot;               /* The slot the client is executing against. Set to -1 if no slot is being used */
-    time_t lastinteraction; /* 上次对本client进行操作的时间点，用于超时检测Time of the last interaction, used for timeout */
+    time_t lastinteraction; /* 上次对本client进行操作的时间点，用于超时检测 Time of the last interaction, used for timeout */
     time_t obuf_soft_limit_reached_time;
     uint64_t flags;         /* Client flags: CLIENT_* macros. */
     int authenticated;      /* Needed when the default user requires auth. */
@@ -1456,19 +1456,19 @@ struct redisServer {
                                    the actual 'hz' field value if dynamic-hz
                                    is enabled. */
     mode_t umask;               /* The umask value of the process on startup */
-    int hz;                     /* serverCron() calls frequency in hertz  serverCron()的调度频率，hz越大，serverCron调度越频繁？ */
+    int hz;                     /* serverCron()的调度频率，hz越大，serverCron调度越频繁（1秒内调用hz次serverCron()） serverCron() calls frequency in hertz */
     int in_fork_child;          /* indication that this is a fork child 当前进程是否fork出来的子进程*/
     redisDb *db;                /* 一个数组，存放所有数据库 */
     dict *commands;             /* 命令表 Command table */
     dict *orig_commands;        /* Command table before command renaming. */
-    aeEventLoop *el;            /* 事件循环实例 */
+    aeEventLoop *el;            /* eventloop 事件循环实例 */
     rax *errors;                /* Errors table */
-    redisAtomic unsigned int lruclock; /* Clock for LRU eviction */
+    redisAtomic unsigned int lruclock; /* LRU淘汰策略的时钟 Clock for LRU eviction */
     volatile sig_atomic_t shutdown_asap; /* Shutdown ordered by signal handler. */
     mstime_t shutdown_mstime;   /* Timestamp to limit graceful shutdown. */
     int last_sig_received;      /* 最后收到的信号 Indicates the last SIGNAL received, if any (e.g., SIGINT or SIGTERM). */
     int shutdown_flags;         /* Flags passed to prepareForShutdown(). */
-    int activerehashing;        /* Incremental rehash in serverCron() */
+    int activerehashing;        /* 是否在serverCron()函数内执行渐进rehash Incremental rehash in serverCron() */
     int active_defrag_running;  /* Active defragmentation running (holds current scan aggressiveness) */
     char *pidfile;              /* PID file path */
     int arch_bits;              /* 32 or 64 depending on sizeof(long) */
@@ -1501,7 +1501,7 @@ struct redisServer {
     int port;                   /* TCP listening port */
     int tls_port;               /* TLS listening port */
     int tcp_backlog;            /* TCP listen() backlog */
-    char *bindaddr[CONFIG_BINDADDR_MAX]; /* 监听/绑定的地址 */
+    char *bindaddr[CONFIG_BINDADDR_MAX]; /* 监听/绑定的ip地址 */
     int bindaddr_count;         /* Number of addresses in server.bindaddr[] */
     char *bind_source_addr;     /* Source address to bind on for outgoing connections */
     char *unixsocket;           /* UNIX socket path */
@@ -1511,9 +1511,9 @@ struct redisServer {
     int sofd;                   /* Unix socket file descriptor */
     uint32_t socket_mark_id;    /* ID for listen socket marking */
     socketFds cfd;              /* Cluster bus listening socket */
-    list *clients;              /* 当前建立连接的client集合 List of active clients */
+    list *clients;              /* 当前所有建立连接的client集合 List of active clients */
     list *clients_to_close;     /* 需要异步关闭的client Clients to close asynchronously */
-    list *clients_pending_write; /* There is to write or install handler. */
+    list *clients_pending_write; /* 等到发出响应数据的客户端队列 There is to write or install handler. */
     list *clients_pending_read;  /* 等待读取read buf的客户端队列 Client has pending read socket buffers. */
     list *slaves, *monitors;    /* List of slaves and MONITORs */
     client *current_client;     /* Current client executing the command. */
@@ -2327,10 +2327,10 @@ typedef struct {
 #define OBJ_HASH_KEY 1
 #define OBJ_HASH_VALUE 2
 
-#define IO_THREADS_OP_IDLE 0//空闲
-#define IO_THREADS_OP_READ 1//处理读操作中
-#define IO_THREADS_OP_WRITE 2//处理写操作中
-extern int io_threads_op; //当前io线程的状态
+#define IO_THREADS_OP_IDLE 0//IO线程空闲
+#define IO_THREADS_OP_READ 1//IO线程处理读操作中
+#define IO_THREADS_OP_WRITE 2//IO线程处理写操作中
+extern int io_threads_op; //当前IO线程的正在进行的操作，空闲，处理read，处理write
 
 /*-----------------------------------------------------------------------------
  * Extern declarations

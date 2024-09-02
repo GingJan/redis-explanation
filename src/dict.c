@@ -207,10 +207,13 @@ int dictTryExpand(dict *d, unsigned long size) {
  * since part of the hash table may be composed of empty spaces, it is not
  * guaranteed that this function will rehash even a single bucket, since it
  * will visit at max N*10 empty buckets in total, otherwise the amount of
- * work it does would be unbound and the function may block for a long time. */
+ * work it does would be unbound and the function may block for a long time.
+ *
+ * （数据结构向），对渐进rehash执行N步，如果返回1则还需要继续rehash，返回0则已完成rehash
+ * */
 int dictRehash(dict *d, int n) {
     int empty_visits = n*10; /* Max number of empty buckets to visit. */
-    if (!dictIsRehashing(d)) return 0;
+    if (!dictIsRehashing(d)) return 0;//判断当前字典d是否处于rehash中
 
     while(n-- && d->ht_used[0] != 0) {//先执行 n && d->ht_used[0] != 0 再执行 n--
         dictEntry *de, *nextde;
@@ -223,7 +226,7 @@ int dictRehash(dict *d, int n) {
             if (--empty_visits == 0) return 1;
         }
         de = d->ht_table[0][d->rehashidx];
-        /* Move all the keys in this bucket from the old to the new hash HT */
+        /* 把本bucket里的全部key移到新的hash表里 Move all the keys in this bucket from the old to the new hash HT */
         while(de) {
             uint64_t h;
 
@@ -231,20 +234,20 @@ int dictRehash(dict *d, int n) {
             /* Get the index in the new hash table */
             h = dictHashKey(d, de->key) & DICTHT_SIZE_MASK(d->ht_size_exp[1]);
             de->next = d->ht_table[1][h];
-            d->ht_table[1][h] = de;
-            d->ht_used[0]--;
+            d->ht_table[1][h] = de;//挪到新hash表里，h是de->key在新表里的hash值
+            d->ht_used[0]--;//旧表的使用量递减
             d->ht_used[1]++;
             de = nextde;
         }
-        d->ht_table[0][d->rehashidx] = NULL;
+        d->ht_table[0][d->rehashidx] = NULL;//清空旧表的bucket
         d->rehashidx++;
     }
 
-    /* Check if we already rehashed the whole table... */
+    /* 是否整个旧表都已经迁移完毕了 Check if we already rehashed the whole table... */
     if (d->ht_used[0] == 0) {
-        zfree(d->ht_table[0]);
+        zfree(d->ht_table[0]);//释放旧表的空间
         /* Copy the new ht onto the old one */
-        d->ht_table[0] = d->ht_table[1];
+        d->ht_table[0] = d->ht_table[1];//把原指针指向新表
         d->ht_used[0] = d->ht_used[1];
         d->ht_size_exp[0] = d->ht_size_exp[1];
         _dictReset(d, 1);
@@ -265,16 +268,18 @@ long long timeInMilliseconds(void) {
 
 /* Rehash in ms+"delta" milliseconds. The value of "delta" is larger 
  * than 0, and is smaller than 1 in most cases. The exact upper bound 
- * depends on the running time of dictRehash(d,100).*/
+ * depends on the running time of dictRehash(d,100).
+ * 在ms毫秒内进行rehash，大部分情况下，ms是大于0且小于1
+ * */
 int dictRehashMilliseconds(dict *d, int ms) {
     if (d->pauserehash > 0) return 0;
 
     long long start = timeInMilliseconds();
     int rehashes = 0;
 
-    while(dictRehash(d,100)) {
+    while(dictRehash(d,100)) {//执行100步rehash
         rehashes += 100;
-        if (timeInMilliseconds()-start > ms) break;
+        if (timeInMilliseconds()-start > ms) break;//当执行的时长超过ms时，则退出本次rehash
     }
     return rehashes;
 }

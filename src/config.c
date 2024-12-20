@@ -348,6 +348,7 @@ int yesnotoi(char *s) {
     else return -1;
 }
 
+//设置触发rdb保存的条件，比如seconds秒内有changes次写操作
 void appendServerSaveParams(time_t seconds, int changes) {
     server.saveparams = zrealloc(server.saveparams,sizeof(struct saveparam)*(server.saveparamslen+1));
     server.saveparams[server.saveparamslen].seconds = seconds;

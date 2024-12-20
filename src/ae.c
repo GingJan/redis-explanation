@@ -159,9 +159,10 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
 void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
-// 创建文件事件，并往底层epoll_add注册监听fd
+
+// 创建文件事件，并调用epoll_add往底层epoll（eventLoop实例）注册对新fd的mask事件监听
 //eventLoop：事件循环实例
-//fd：需要监听的fd
+//fd：需要监听的新fd
 //mask：需要监听的事件
 //proc：事件处理函数
 //clientData：客户端发来的数据
@@ -183,12 +184,13 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask, aeFileProc *proc
         eventLoop->maxfd = fd;
     return AE_OK;
 }
-//删除对fd的指定事件监听
+
+//删除fd的指定事件的监听
 void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
 {
     if (fd >= eventLoop->setsize) return;
-    aeFileEvent *fe = &eventLoop->events[fd];//获取该fd对应的文件事件
-    if (fe->mask == AE_NONE) return;
+    aeFileEvent *fe = &eventLoop->events[fd];//获取该fd对应的文件事件实例
+    if (fe->mask == AE_NONE) return; //该fd已无注册事件了
 
     /* We want to always remove AE_BARRIER if set when AE_WRITABLE
      * is removed.
@@ -198,7 +200,7 @@ void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
      */
     if (mask & AE_WRITABLE) mask |= AE_BARRIER; // mask | 0100，取mask=X1XX
 
-    aeApiDelEvent(eventLoop, fd, mask);//调用系统底层的epoll_ct(DEL)，删除对fd的指定事件监听，mask=指定的事件
+    aeApiDelEvent(eventLoop, fd, mask);//调用系统底层的epoll_ct(DEL)，删除对fd的指定事件的监听，mask=指定的事件
     fe->mask = fe->mask & (~mask);//更新 剩余的事件
     if (fd == eventLoop->maxfd && fe->mask == AE_NONE) {
         /* Update the max fd */
@@ -419,13 +421,14 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             tvp = &tv;
         }
 
+        /* 在陷入poll前，先执行beforesleep回调 */
         if (eventLoop->beforesleep != NULL && flags & AE_CALL_BEFORE_SLEEP)
-            eventLoop->beforesleep(eventLoop);
+            eventLoop->beforesleep(eventLoop);//底层就是 beforeSleep 函数
 
         /* 调用多路复用api，一直阻塞直到 超时 或 有事件触发时才返回 */
         numevents = aeApiPoll(eventLoop, tvp);//numevents 触发事件的个数，aeApiPoll()底层是调用对应系统的epoll_wait()
 
-        /* 回调aftersleep函数 */
+        /* 退出poll后，执行aftersleep回调 */
         if (eventLoop->aftersleep != NULL && flags & AE_CALL_AFTER_SLEEP)
             eventLoop->aftersleep(eventLoop);
 

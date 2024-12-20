@@ -371,15 +371,14 @@ These JSON files are not meant to be used directly by anyone directly, instead t
 networking.c
 ---
 
-This file defines all the I/O functions with clients, masters and replicas
-(which in Redis are just special clients):
+该文件定义了client，master，副本（从）相关的所有IO函数：
 
-* `createClient()` allocates and initializes a new client.
-* the `addReply*()` family of functions are used by command implementations in order to append data to the client structure, that will be transmitted to the client as a reply for a given command executed.
-* `writeToClient()` transmits the data pending in the output buffers to the client and is called by the *writable event handler* `sendReplyToClient()`.
-* `readQueryFromClient()` is the *readable event handler* and accumulates data read from the client into the query buffer.
-* `processInputBuffer()` is the entry point in order to parse the client query buffer according to the Redis protocol. Once commands are ready to be processed, it calls `processCommand()` which is defined inside `server.c` in order to actually execute the command.
-* `freeClient()` deallocates, disconnects and removes a client.
+* `createClient()` 分配并初始化一个新的client
+* `addReply*()` 函数开头的一类函数，用于把命令执行完毕后的响应数据写入到client，等待返回给客户端
+* `writeToClient()` 由 *可写时间handler* `sendReplyToClient()` 调用该函数，该函数把在输出缓冲区里的数据发送给客户端
+* `readQueryFromClient()` 是 *可读事件handler* 并把从客户端读取到的数据写到query buffer里等待进一步处理
+* `processInputBuffer()` 根据redis协议解析处于输入缓冲区里的数据，一旦命令就绪可处理，本函数会调用 `server.c` 的 `processCommand()` 来真正地执行命令
+* `freeClient()` 释放，断连并移除client实例
 
 aof.c and rdb.c
 ---

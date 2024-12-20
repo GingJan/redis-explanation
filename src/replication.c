@@ -1391,7 +1391,7 @@ void sendBulkToSlave(connection *conn) {
     if (slave->repldboff == slave->repldbsize) {
         close(slave->repldbfd);
         slave->repldbfd = -1;
-        connSetWriteHandler(slave->conn,NULL);
+        connSetWriteHandler(slave->conn,NULL);//移除对conn的可写文件事件的监听
         replicaPutOnline(slave);
         replicaStartCommandStream(slave);
     }
@@ -1402,7 +1402,7 @@ void sendBulkToSlave(connection *conn) {
 void rdbPipeWriteHandlerConnRemoved(struct connection *conn) {
     if (!connHasWriteHandler(conn))
         return;
-    connSetWriteHandler(conn, NULL);
+    connSetWriteHandler(conn, NULL);//移除对conn的可写文件事件的监听
     client *slave = connGetPrivateData(conn);
     slave->repl_last_partial_write = 0;
     server.rdb_pipe_numconns_writing--;
@@ -1610,7 +1610,7 @@ void updateSlavesWaitingBgsave(int bgsaveerr, int type) {
                 slave->replpreamble = sdscatprintf(sdsempty(),"$%lld\r\n",
                     (unsigned long long) slave->repldbsize);
 
-                connSetWriteHandler(slave->conn,NULL);
+                connSetWriteHandler(slave->conn,NULL);//移除对conn的可写文件事件的监听
                 if (connSetWriteHandler(slave->conn,sendBulkToSlave) == C_ERR) {
                     freeClientAsync(slave);
                     continue;
@@ -2549,7 +2549,7 @@ void syncWithMaster(connection *conn) {
         serverLog(LL_NOTICE,"Non blocking connect for SYNC fired the event.");
         /* 删除可写事件，保留可读事件以便等待PONG响应. */
         connSetReadHandler(conn, syncWithMaster);
-        connSetWriteHandler(conn, NULL);
+        connSetWriteHandler(conn, NULL);//移除对conn的可写文件事件的监听
         server.repl_state = REPL_STATE_RECEIVE_PING_REPLY;
         /* Send the PING, don't check for errors at all, we have the timeout
          * that will take care about this. */
@@ -2895,12 +2895,12 @@ int cancelReplicationHandshake(int reconnect) {
      * for the "diskless loading short read" test. */
     serverLog(LL_NOTICE,"Reconnecting to MASTER %s:%d after failure",
         server.masterhost, server.masterport);
-    connectWithMaster();
+    connectWithMaster();//连接失败后的重连
 
     return 1;
 }
 
-/* Set replication to the specified master address and port. */
+/* 根据ip+port，设置绑定的master结点（本函数由slave结点调起） Set replication to the specified master address and port. */
 void replicationSetMaster(char *ip, int port) {
     int was_master = server.masterhost == NULL;
 
@@ -2948,7 +2948,7 @@ void replicationSetMaster(char *ip, int port) {
     server.repl_state = REPL_STATE_CONNECT;
     serverLog(LL_NOTICE,"Connecting to MASTER %s:%d",
         server.masterhost, server.masterport);
-    connectWithMaster();
+    connectWithMaster();//slave第一次设置master时，尝试连接
 }
 
 /* Cancel replication, setting the instance as a master itself. */
@@ -3024,12 +3024,11 @@ void replicationHandleMasterDisconnection(void) {
      * maybe we'll be able to PSYNC with our master later. We'll disconnect
      * the slaves only if we'll have to do a full resync with our master. */
 
-    /* Try to re-connect immediately rather than wait for replicationCron
-     * waiting 1 second may risk backlog being recycled. */
+    /* 尝试立即重连而不是等待replicationCron的调用，因为等待多1秒，backlog被回收的可能性就会变大 */
     if (server.masterhost) {
         serverLog(LL_NOTICE,"Reconnecting to MASTER %s:%d",
             server.masterhost, server.masterport);
-        connectWithMaster();
+        connectWithMaster();//slave丢失与master的连接时，重连尝试
     }
 }
 
@@ -3544,7 +3543,7 @@ void replicationCron(void) {
     if (server.repl_state == REPL_STATE_CONNECT) {
         serverLog(LL_NOTICE,"Connecting to MASTER %s:%d",
             server.masterhost, server.masterport);
-        connectWithMaster();
+        connectWithMaster();//slave定时任务，尝试连接
     }
 
     /* Send ACK to master from time to time.

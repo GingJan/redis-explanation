@@ -59,7 +59,8 @@ typedef struct dictEntry {
 } dictEntry;
 
 typedef struct dict dict;
-//字典dict的方法
+
+//字典dict结构体的方法
 typedef struct dictType {
     uint64_t (*hashFunction)(const void *key);
     void *(*keyDup)(dict *d, const void *key);

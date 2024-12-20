@@ -41,23 +41,23 @@ typedef struct connection connection;
 
 typedef enum {
     CONN_STATE_NONE = 0,
-    CONN_STATE_CONNECTING,//连接中
+    CONN_STATE_CONNECTING,//连接建立中
     CONN_STATE_ACCEPTING,//从全连接队列取出中
-    CONN_STATE_CONNECTED,//已建立连接
+    CONN_STATE_CONNECTED,//连接已建立
     CONN_STATE_CLOSED,//关闭
     CONN_STATE_ERROR
 } ConnectionState;//连接状态
 
-#define CONN_FLAG_CLOSE_SCHEDULED   (1<<0)      /* 延迟释放conn标识 Closed scheduled by a handler */
-#define CONN_FLAG_WRITE_BARRIER     (1<<1)      /* Write barrier requested */
+#define CONN_FLAG_CLOSE_SCHEDULED   (1<<0)      /* 由conn->close的handler执行关闭操作 Closed scheduled by a handler */
+#define CONN_FLAG_WRITE_BARRIER     (1<<1)      /* 写屏障标志 Write barrier requested */
 
 #define CONN_TYPE_SOCKET            1
 #define CONN_TYPE_TLS               2
 
 typedef void (*ConnectionCallbackFunc)(struct connection *conn);
 
-typedef struct ConnectionType {
-    void (*ae_handler)(struct aeEventLoop *el, int fd, void *clientData, int mask);//当epoll有事件触发时，调用本函数
+typedef struct ConnectionType { //实例有 CT_Socket 和 CT_TLS
+    void (*ae_handler)(struct aeEventLoop *el, int fd, void *clientData, int mask);//当epoll有事件触发时，调用本函数，本函数的实现有 connSocketEventHandler()（connection.c） 或 tlsEventHandler()（tls.c）
     int (*connect)(struct connection *conn, const char *addr, int port, const char *source_addr, ConnectionCallbackFunc connect_handler);
     int (*write)(struct connection *conn, const void *data, size_t data_len);
     int (*writev)(struct connection *conn, const struct iovec *iov, int iovcnt);
@@ -65,7 +65,7 @@ typedef struct ConnectionType {
     void (*close)(struct connection *conn);
     int (*accept)(struct connection *conn, ConnectionCallbackFunc accept_handler);
     int (*set_write_handler)(struct connection *conn, ConnectionCallbackFunc handler, int barrier);
-    int (*set_read_handler)(struct connection *conn, ConnectionCallbackFunc handler);
+    int (*set_read_handler)(struct connection *conn, ConnectionCallbackFunc handler); //本方法的实现是 connSocketSetReadHandler()（connection.c） 或 connTLSSetReadHandler()（tls.c）
     const char *(*get_last_error)(struct connection *conn);
     int (*blocking_connect)(struct connection *conn, const char *addr, int port, long long timeout);
     ssize_t (*sync_write)(struct connection *conn, char *ptr, ssize_t size, long long timeout);
@@ -75,14 +75,14 @@ typedef struct ConnectionType {
 } ConnectionType;
 
 struct connection {
-    ConnectionType *type;//存放方法的具体实现
+    ConnectionType *type;//存放方法的具体实现（不同的连接类型（有connection普通连接和tls安全连接）方法的实现都不同）
     ConnectionState state;//当前conn连接的状态
     short int flags;
     short int refs;//当前conn正在被refs个handler处理中，当refs为0时，connection才可被释放，但可以先关闭连接close(fd)
     int last_errno;
     void *private_data;//存着client
-    ConnectionCallbackFunc conn_handler;
-    ConnectionCallbackFunc write_handler; //conn的写handler
+    ConnectionCallbackFunc conn_handler; //conn的连接建立handler
+    ConnectionCallbackFunc write_handler; //conn的写handler，当发生写事件时，调用本函数
     ConnectionCallbackFunc read_handler; //conn的读handler
     int fd;
 };
@@ -140,6 +140,7 @@ static inline int connBlockingConnect(connection *conn, const char *addr, int po
  * The caller should NOT rely on errno. Testing for an EAGAIN-like condition, use
  * connGetState() to see if the connection state is still CONN_STATE_CONNECTED.
  */
+// 最终的发送数据给客户端
 static inline int connWrite(connection *conn, const void *data, size_t data_len) {
     return conn->type->write(conn, data, data_len);
 }
@@ -152,6 +153,7 @@ static inline int connWrite(connection *conn, const void *data, size_t data_len)
  * The caller should NOT rely on errno. Testing for an EAGAIN-like condition, use
  * connGetState() to see if the connection state is still CONN_STATE_CONNECTED.
  */
+// 最终的发送数据给客户端，本函数比connWrite()高效
 static inline int connWritev(connection *conn, const struct iovec *iov, int iovcnt) {
     return conn->type->writev(conn, iov, iovcnt);
 }
@@ -176,8 +178,8 @@ static inline int connSetWriteHandler(connection *conn, ConnectionCallbackFunc f
     return conn->type->set_write_handler(conn, func, 0);
 }
 
-/* Register a read handler, to be called when the connection is readable.
- * If NULL, the existing handler is removed.
+/* 注册一个read handler，当连接可读时，该handler会被调用
+ * 如果是NULL，则表示删除已注册的handler
  */
 static inline int connSetReadHandler(connection *conn, ConnectionCallbackFunc func) {
     return conn->type->set_read_handler(conn, func);
@@ -189,12 +191,12 @@ static inline int connSetReadHandler(connection *conn, ConnectionCallbackFunc fu
  * fired in the same event loop iteration. Useful when you want to persist
  * things to disk before sending replies, and want to do that in a group fashion.
  *
- * 设置一个write handler，并可设置写屏蔽开关，当write handler被移除时，该flag也会被清理
- * 当屏障开启时，若在本次事件循环迭代里，read handler已经被调用，那事件的写handler不会调用
+ * 为连接conn设置一个write handler（func），并可设置写屏蔽barrier标志，当write handler被移除时，该标志也会被删掉
+ * 当屏障开启时，若在同一次事件循环迭代里，read handler已被调用了，那么事件的write handler就不会调用
  * 当你在发送数据给其他redis副本前，想持久化一些数据到磁盘或以组的方式发送时，可开启写屏障
  * */
 static inline int connSetWriteHandlerWithBarrier(connection *conn, ConnectionCallbackFunc func, int barrier) {
-    return conn->type->set_write_handler(conn, func, barrier);
+    return conn->type->set_write_handler(conn, func, barrier);//把func注册到conn->write_handler
 }
 
 static inline void connClose(connection *conn) {

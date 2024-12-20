@@ -38,7 +38,7 @@
 extern "C" {
 #endif
 
-/* Structure pointing to our actually configured allocators */
+// 这个结构体指向内存管理相关的函数，可以通过注册自定义的内存管理函数来控制内存分配策略
 typedef struct hiredisAllocFuncs {
     void *(*mallocFn)(size_t);
     void *(*callocFn)(size_t,size_t);

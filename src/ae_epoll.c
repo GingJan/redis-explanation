@@ -32,7 +32,7 @@
 #include <sys/epoll.h>
 
 typedef struct aeApiState {
-    int epfd;
+    int epfd;//epoll实例
     struct epoll_event *events;
 } aeApiState;
 
@@ -57,6 +57,7 @@ static int aeApiCreate(aeEventLoop *eventLoop) {
     return 0;
 }
 
+//对eventLoop里的epoll_event进行扩容
 static int aeApiResize(aeEventLoop *eventLoop, int setsize) {
     aeApiState *state = eventLoop->apidata;
 
@@ -107,6 +108,7 @@ static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int delmask) {
     }
 }
 
+//等待事件触发，底层调用epoll_wait实现，tvp为阻塞的时间
 static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     aeApiState *state = eventLoop->apidata;
     int retval, numevents = 0;

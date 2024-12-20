@@ -227,6 +227,9 @@ sds getAofManifestAsString(aofManifest *am) {
  * If the AOF directory or manifest file do not exist, this will be ignored
  * in order to support seamless upgrades from previous versions which did not
  * use them.
+ *
+ * 当redis启动时，从磁盘加载信息到server.aof_manifest
+ * 在加载期间，函数会严格检查错误，并且如果发生I0错误，无效格式等，则立即结束进程
  */
 void aofLoadManifestFromDisk(void) {
     server.aof_manifest = aofManifestCreate();

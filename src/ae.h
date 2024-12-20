@@ -36,10 +36,10 @@
 #define AE_OK 0
 #define AE_ERR -1
 
-#define AE_NONE 0       /* 无已注册的事件 */
-#define AE_READABLE 1   /* 当fd可读时触发 */
-#define AE_WRITABLE 2   /* 当fd可写时触发 */
-#define AE_BARRIER 4    /* 读写事件处理顺序是否反转，默认情况下，先处理读再处理写，当在批量发送响应数据给client时，需把内容先持久化到磁盘时 非常有用 */
+#define AE_NONE 0       /* 000 无已注册的事件*/
+#define AE_READABLE 1   /* 001 当fd可读时触发*/
+#define AE_WRITABLE 2   /* 010 当fd可写时触发*/
+#define AE_BARRIER 4    /* 100 读写事件处理顺序是否反转，默认情况下，先处理读再处理写，当在批量发送响应数据给client时，需把内容先持久化到磁盘时 非常有用 */
 
 #define AE_FILE_EVENTS (1<<0)//1
 #define AE_TIME_EVENTS (1<<1)//2
@@ -64,10 +64,10 @@ typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 
 /* 文件事件 结构体 */
 typedef struct aeFileEvent {
-    int mask; /* AE_READABLE 0001 或 AE_WRITABLE 0010 或 AE_BARRIER 0100 */
+    int mask; /* 事件，AE_READABLE 0001 或 AE_WRITABLE 0010 或 AE_BARRIER 0100 */
     aeFileProc *rfileProc; //可读事件处理函数
     aeFileProc *wfileProc; //可写事件处理函数
-    void *clientData; //客户端数据
+    void *clientData; //数据
 } aeFileEvent;
 
 /* 时间事件 结构体 */
@@ -92,13 +92,13 @@ typedef struct aeFiredEvent {
 /* 基于事件状态的程序 */
 typedef struct aeEventLoop {
     int maxfd;   /* 当前已注册的最大fd（注fd是一个整型数字） */
-    int setsize; /* 可注册的fd的数量 */
+    int setsize; /* 可注册？还是已注册？ 的fd的数量 */
     long long timeEventNextId; //时间事件的id生成器
     aeFileEvent *events; /* 已注册的事件，是一个数组，下标是fd */
     aeFiredEvent *fired; /* 被触发的事件，是一个数组，下标是fd */
     aeTimeEvent *timeEventHead; //时间事件链表 的头节点
     int stop;//是否停止，0否，1是
-    void *apidata; /* 该字段用于存放对应系统创建的epoll实例 */
+    void *apidata; /* 该字段用于存放对应系统创建的epoll实例，指向 aeApiState */
     aeBeforeSleepProc *beforesleep; // 在调用epoll_wait前执行
     aeBeforeSleepProc *aftersleep; // 在epoll_wait返回后执行
     int flags;

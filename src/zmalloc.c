@@ -92,13 +92,15 @@ void zlibc_free(void *ptr) {
 
 static redisAtomic size_t used_memory = 0;//已使用内存（的字节数） 在分配内存或释放时，都会累计到这个变量
 
+//默认的oom handler
 static void zmalloc_default_oom(size_t size) {
-    fprintf(stderr, "zmalloc: Out of memory trying to allocate %zu bytes\n",
-        size);
+    //输出错误信息并退出进程
+    fprintf(stderr, "zmalloc: Out of memory trying to allocate %zu bytes\n", size);
     fflush(stderr);
     abort();
 }
 
+//oom handler
 static void (*zmalloc_oom_handler)(size_t) = zmalloc_default_oom;
 
 /* Try allocating memory, and return NULL if failed.
@@ -125,11 +127,12 @@ void *ztrymalloc_usable(size_t size, size_t *usable) {
 }
 
 /* Allocate memory or panic */
-// 分配内存，失败时抛出panic并且abort()，该函数在分配内存时，会同时统计总共已用内存数量
+// 分配内存，失败时抛出panic并且abort()（oom handler），该函数在分配内存时，会同时统计总共已用内存数量
+// size 本次要分配的内存大小
 // 具体解释 可以查阅：https://zhuanlan.zhihu.com/p/38276637
 void *zmalloc(size_t size) {
     void *ptr = ztrymalloc_usable(size, NULL);// 分配内存，注意 实际分配的内存比size大，多了PREFIX_SIZE个字节，这几个字节用来存放size这个值
-    if (!ptr) zmalloc_oom_handler(size); // 分配失败抛出异常
+    if (!ptr) zmalloc_oom_handler(size); // 分配失败，调用oom handler处理
     return ptr;
 }
 
@@ -139,11 +142,10 @@ void *ztrymalloc(size_t size) {
     return ptr;
 }
 
-/* Allocate memory or panic.
- * '*usable' is set to the usable size if non NULL. */
+/* 分配内存或panic，usable输出参数是可用内存大小值 */
 void *zmalloc_usable(size_t size, size_t *usable) {
     void *ptr = ztrymalloc_usable(size, usable);
-    if (!ptr) zmalloc_oom_handler(size);
+    if (!ptr) zmalloc_oom_handler(size); //如果分配失败，则调用oom handler
     return ptr;
 }
 
@@ -154,7 +156,7 @@ void *zmalloc_usable(size_t size, size_t *usable) {
 void *zmalloc_no_tcache(size_t size) {
     ASSERT_NO_SIZE_OVERFLOW(size);
     void *ptr = mallocx(size+PREFIX_SIZE, MALLOCX_TCACHE_NONE);
-    if (!ptr) zmalloc_oom_handler(size);
+    if (!ptr) zmalloc_oom_handler(size);//如果分配失败，则调用oom handler
     update_zmalloc_stat_alloc(zmalloc_size(ptr));
     return ptr;
 }
@@ -192,32 +194,31 @@ void *zcalloc_num(size_t num, size_t size) {
     /* Ensure that the arguments to calloc(), when multiplied, do not wrap.
      * Division operations are susceptible to divide-by-zero errors so we also check it. */
     if ((size == 0) || (num > SIZE_MAX/size)) {
-        zmalloc_oom_handler(SIZE_MAX);
+        zmalloc_oom_handler(SIZE_MAX);//如果失败，则调用oom handler
         return NULL;
     }
     void *ptr = ztrycalloc_usable(num*size, NULL);
-    if (!ptr) zmalloc_oom_handler(num*size);
+    if (!ptr) zmalloc_oom_handler(num*size);//如果分配失败，则调用oom handler
     return ptr;
 }
 
 /* Allocate memory and zero it or panic */
 void *zcalloc(size_t size) {
     void *ptr = ztrycalloc_usable(size, NULL);
-    if (!ptr) zmalloc_oom_handler(size);
+    if (!ptr) zmalloc_oom_handler(size);//如果分配失败，则调用oom handler
     return ptr;
 }
 
-/* Try allocating memory, and return NULL if failed. */
+/* 尝试分配内存，当分配失败时则返回NULL（不调用oom handler） */
 void *ztrycalloc(size_t size) {
     void *ptr = ztrycalloc_usable(size, NULL);
     return ptr;
 }
 
-/* Allocate memory or panic.
- * '*usable' is set to the usable size if non NULL. */
+/* 分配内存或panic，usable输出参数是可用内存大小值 */
 void *zcalloc_usable(size_t size, size_t *usable) {
     void *ptr = ztrycalloc_usable(size, usable);
-    if (!ptr) zmalloc_oom_handler(size);
+    if (!ptr) zmalloc_oom_handler(size);//如果分配失败，则调用oom handler
     return ptr;
 }
 
@@ -276,7 +277,7 @@ void *ztryrealloc_usable(void *ptr, size_t size, size_t *usable) {
 // 对ptr 扩容
 void *zrealloc(void *ptr, size_t size) {
     ptr = ztryrealloc_usable(ptr, size, NULL);//对ptr 扩容
-    if (!ptr && size != 0) zmalloc_oom_handler(size);
+    if (!ptr && size != 0) zmalloc_oom_handler(size);//如果分配失败，则调用oom handler
     return ptr;
 }
 
@@ -290,7 +291,7 @@ void *ztryrealloc(void *ptr, size_t size) {
  * '*usable' is set to the usable size if non NULL. */
 void *zrealloc_usable(void *ptr, size_t size, size_t *usable) {
     ptr = ztryrealloc_usable(ptr, size, usable);
-    if (!ptr && size != 0) zmalloc_oom_handler(size);
+    if (!ptr && size != 0) zmalloc_oom_handler(size);//如果分配失败，则调用oom handler
     return ptr;
 }
 
@@ -359,6 +360,7 @@ size_t zmalloc_used_memory(void) {
     return um;
 }
 
+//设置oom的handler
 void zmalloc_set_oom_handler(void (*oom_handler)(size_t)) {
     zmalloc_oom_handler = oom_handler;
 }

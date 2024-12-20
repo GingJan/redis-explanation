@@ -87,7 +87,7 @@ struct RedisModuleSharedAPI {
 };
 typedef struct RedisModuleSharedAPI RedisModuleSharedAPI;
 
-dict *modules; /* Hash table of modules. SDS -> RedisModule ptr.*/
+dict *modules; /* 模块的hash表结构，key是SDS字符串，value是RedisModule指针 Hash table of modules. SDS -> RedisModule ptr.*/
 
 /* Entries in the context->amqueue array, representing objects to free
  * when the callback returns. */
@@ -280,7 +280,8 @@ static size_t moduleTempClientCount = 0;    /* Client count in pool */
 static size_t moduleTempClientMinCount = 0; /* Min client count in pool since
                                                the last cron. */
 
-/* We need a mutex that is unlocked / relocked in beforeSleep() in order to
+/* 在beforeSleep函数内，需要一个互斥锁来在安全时刻下，允许线程安全执行命令
+ * We need a mutex that is unlocked / relocked in beforeSleep() in order to
  * allow thread safe contexts to execute commands at a safe moment. */
 static pthread_mutex_t moduleGIL = PTHREAD_MUTEX_INITIALIZER;
 
@@ -10798,6 +10799,7 @@ dictType sdsKeyValueHashDictType = {
     NULL                        /* allow to expand */
 };
 
+//初始化模块系统
 void moduleInitModulesSystem(void) {
     moduleUnblockedClients = listCreate();
     server.loadmodule_queue = listCreate();

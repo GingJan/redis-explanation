@@ -254,6 +254,7 @@ void scriptResetRun(scriptRunCtx *run_ctx) {
 }
 
 /* return true if a script is currently running */
+// 当前lua脚本是否在执行
 int scriptIsRunning() {
     return curr_run_ctx != NULL;
 }

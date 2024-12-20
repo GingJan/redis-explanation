@@ -51,6 +51,7 @@ hiredisAllocFuncs hiredisSetAllocators(hiredisAllocFuncs *override) {
 }
 
 /* Reset allocators to use libc defaults */
+// 重置为默认的处理函数
 void hiredisResetAllocators(void) {
     hiredisAllocFns = (hiredisAllocFuncs) {
         .mallocFn = malloc,

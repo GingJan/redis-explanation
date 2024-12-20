@@ -759,10 +759,10 @@ void getRandomBytes(unsigned char *p, size_t len) {
     }
 }
 
-/* Generate the Redis "Run ID", a SHA1-sized random number that identifies a
- * given execution of Redis, so that if you are talking with an instance
- * having run_id == A, and you reconnect and it has run_id == B, you can be
- * sure that it is either a different instance or it was restarted. */
+/* Redis 在启动时会生成一个 "Run ID" 标识，它是一个 160 位（20 字节）大小的随机数，
+ * 通常通过 SHA1 哈希算法生成，用来唯一标识 Redis 实例（进程）。
+ * 这个 Run ID 用于帮助客户端识别某个 Redis 实例是否发生了重启或是一个不同的实例。
+ * */
 void getRandomHexChars(char *p, size_t len) {
     char *charset = "0123456789abcdef";
     size_t j;

@@ -193,7 +193,7 @@ int hashTypeSet(robj *o, sds field, sds value, int flags) {
     /* Check if the field is too long for listpack, and convert before adding the item.
      * This is needed for HINCRBY* case since in other commands this is handled early by
      * hashTypeTryConversion, so this check will be a NOP. */
-    if (o->encoding == OBJ_ENCODING_LISTPACK) {
+    if (o->encoding == OBJ_ENCODING_LISTPACK) {//当前robj的底层实现是listpack类型
         if (sdslen(field) > server.hash_max_listpack_value || sdslen(value) > server.hash_max_listpack_value)
             hashTypeConvert(o, OBJ_ENCODING_HT);
     }
@@ -436,11 +436,11 @@ sds hashTypeCurrentObjectNewSds(hashTypeIterator *hi, int what) {
 
 robj *hashTypeLookupWriteOrCreate(client *c, robj *key) {
     robj *o = lookupKeyWrite(c->db,key);
-    if (checkType(c,o,OBJ_HASH)) return NULL;
+    if (checkType(c,o,OBJ_HASH)) return NULL;//如果key对应的robj实例不是hash类型
 
-    if (o == NULL) {
-        o = createHashObject();
-        dbAdd(c->db,key,o);
+    if (o == NULL) {//如果key不存在对应的robj
+        o = createHashObject();//创建一个hash类型的robj
+        dbAdd(c->db,key,o);//把该robj添加到db的字典里
     }
     return o;
 }
@@ -601,7 +601,7 @@ void hsetCommand(client *c) {
     int i, created = 0;
     robj *o;
 
-    if ((c->argc % 2) == 1) {
+    if ((c->argc % 2) == 1) {//参数个数错误
         addReplyErrorArity(c);
         return;
     }
@@ -743,7 +743,8 @@ void hmgetCommand(client *c) {
     robj *o;
     int i;
 
-    /* Don't abort when the key cannot be found. Non-existing keys are empty
+    /* 当key找不到时，不要终止，不存在的key是空hash，HMGET返回一个空的值
+     * Don't abort when the key cannot be found. Non-existing keys are empty
      * hashes, where HMGET should respond with a series of null bulks. */
     o = lookupKeyRead(c->db, c->argv[1]);
     if (checkType(c,o,OBJ_HASH)) return;

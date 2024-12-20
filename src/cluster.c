@@ -2611,10 +2611,10 @@ void clusterWriteHandler(connection *conn) {
     }
     sdsrange(link->sndbuf,nwritten,-1);
     if (sdslen(link->sndbuf) == 0)
-        connSetWriteHandler(link->conn, NULL);
+        connSetWriteHandler(link->conn, NULL);//移除对conn的可写文件事件的监听
 }
 
-/* A connect handler that gets called when a connection to another node
+/* 当两个结点建立好连接时，该函数会被调用 A connect handler that gets called when a connection to another node
  * gets established.
  */
 void clusterLinkConnectHandler(connection *conn) {

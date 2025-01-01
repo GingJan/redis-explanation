@@ -39,6 +39,7 @@
 
 /* ===================== 创建并解析对象 Creation and parsing of objects ==================== */
 
+// 创建一个robj实例，type=robj类型，ptr指向的底层数据
 robj *createObject(int type, void *ptr) {
     robj *o = zmalloc(sizeof(*o));
     o->type = type;//redis数据类型，即string、hash、list、set、sorted-set

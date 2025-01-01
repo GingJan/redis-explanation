@@ -1567,7 +1567,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
      * events to handle. */
     if (ProcessingEventsWhileBlocked) {//当目前处于不可中断的阻塞态时，执行以下逻辑
         uint64_t processed = 0;
-        processed += handleClientsWithPendingReadsUsingThreads();//尽量通过io线程读取部分数据
+        processed += handleClientsWithPendingReadsUsingThreads();//在事件循环进入下一个周期前，尽量通过io线程读取部分数据
         processed += tlsProcessPendingData();
 
         if (server.aof_state == AOF_ON || server.aof_state == AOF_WAIT_REWRITE)//开启AOF
@@ -1620,7 +1620,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
 
     /* Try to process pending commands for clients that were just unblocked. */
     if (listLength(server.unblocked_clients))
-        processUnblockedClients();
+        processUnblockedClients();//处理已解除阻塞的client
 
     /* Send all the slaves an ACK request if at least one client blocked
      * during the previous event loop iteration. Note that we do this after
@@ -1716,7 +1716,7 @@ void afterSleep(struct aeEventLoop *eventLoop) {
 void createSharedObjects(void) {
     int j;
 
-    /* Shared command responses */
+    /* 全局共享的命令响应实例（享元莫斯 */
     shared.crlf = createObject(OBJ_STRING,sdsnew("\r\n"));
     shared.ok = createObject(OBJ_STRING,sdsnew("+OK\r\n"));
     shared.emptybulk = createObject(OBJ_STRING,sdsnew("$0\r\n\r\n"));
@@ -3005,7 +3005,7 @@ struct redisCommand *lookupSubcommand(struct redisCommand *container, sds sub_na
  */
 struct redisCommand *lookupCommandLogic(dict *commands, robj **argv, int argc, int strict) {
     struct redisCommand *base_cmd = dictFetchValue(commands, argv[0]->ptr);
-    int has_subcommands = base_cmd && base_cmd->subcommands_dict;
+    int has_subcommands = base_cmd && base_cmd->subcommands_dict;//子命令（如ACL、SCRIPT、CLUSTER、MODULE、CONFIG、DEBUG、INFO、SLOWLOG、CLIENT、MEMORY、PUBSUB等都有子命令
     if (argc == 1 || !has_subcommands) {
         if (strict && argc != 1)
             return NULL;
@@ -3675,8 +3675,7 @@ int processCommand(client *c) {
         return C_OK;
     }
 
-    /* 在命令表里寻找命令 Now lookup the command and check ASAP about trivial error conditions
-     * such as wrong arity, bad command name and so forth. */
+    /* 在命令表里寻找命令 */
     c->cmd = c->lastcmd = c->realcmd = lookupCommand(c->argv,c->argc);
     sds err;
     if (!commandCheckExistence(c, &err)) {//命令是否存在

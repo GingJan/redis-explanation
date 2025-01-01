@@ -139,9 +139,9 @@ void processUnblockedClients(void) {
          * is blocked again. Actually processInputBuffer() checks that the
          * client is not blocked before to proceed, but things may change and
          * the code is conceptually more correct this way. */
-        if (!(c->flags & CLIENT_BLOCKED)) {
+        if (!(c->flags & CLIENT_BLOCKED)) {//
             /* If we have a queued command, execute it now. */
-            if (processPendingCommandAndInputBuffer(c) == C_ERR) {
+            if (processPendingCommandAndInputBuffer(c) == C_ERR) {//执行client请求的命令
                 c = NULL;
             }
         }
@@ -169,12 +169,12 @@ void queueClientForReprocessing(client *c) {
     /* The client may already be into the unblocked list because of a previous
      * blocking operation, don't add back it into the list multiple times. */
     if (!(c->flags & CLIENT_UNBLOCKED)) {
-        c->flags |= CLIENT_UNBLOCKED;
-        listAddNodeTail(server.unblocked_clients,c);
+        c->flags |= CLIENT_UNBLOCKED;//c已解除阻塞状态，等待进一步处理
+        listAddNodeTail(server.unblocked_clients,c);//添加到队列里，等待处理
     }
 }
 
-/* Unblock a client calling the right function depending on the kind
+/* 解除client的阻塞 Unblock a client calling the right function depending on the kind
  * of operation the client is blocking for. */
 void unblockClient(client *c) {
     if (c->btype == BLOCKED_LIST ||

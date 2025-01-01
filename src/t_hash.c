@@ -187,6 +187,7 @@ int hashTypeExists(robj *o, sds field) {
 #define HASH_SET_TAKE_FIELD (1<<0)
 #define HASH_SET_TAKE_VALUE (1<<1)
 #define HASH_SET_COPY 0
+// o是robj对象，field是hash里的字段
 int hashTypeSet(robj *o, sds field, sds value, int flags) {
     int update = 0;
 
@@ -226,7 +227,7 @@ int hashTypeSet(robj *o, sds field, sds value, int flags) {
         /* Check if the listpack needs to be converted to a hash table */
         if (hashTypeLength(o) > server.hash_max_listpack_entries)
             hashTypeConvert(o, OBJ_ENCODING_HT);
-    } else if (o->encoding == OBJ_ENCODING_HT) {
+    } else if (o->encoding == OBJ_ENCODING_HT) {//底顶是hash table编码
         dictEntry *de = dictFind(o->ptr,field);
         if (de) {
             sdsfree(dictGetVal(de));

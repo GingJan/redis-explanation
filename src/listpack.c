@@ -494,10 +494,9 @@ unsigned char *lpPrev(unsigned char *lp, unsigned char *p) {
     return p;
 }
 
-/* Return a pointer to the first element of the listpack, or NULL if the
- * listpack has no elements. */
-unsigned char *lpFirst(unsigned char *lp) {
-    unsigned char *p = lp + LP_HDR_SIZE; /* Skip the header. */
+// 返回指向listpack第一个元素的指针，如何listpack无元素则返回NULL
+unsigned char *lpFirst(unsigned char *lp) { //lp指向listpack实例的指针
+    unsigned char *p = lp + LP_HDR_SIZE; /* 跳过头部 */
     if (p[0] == LP_EOF) return NULL;
     lpAssertValidEntry(lp, lpBytes(lp), p);
     return p;
@@ -1275,6 +1274,7 @@ int lpValidateNext(unsigned char *lp, unsigned char **pp, size_t lpbytes) {
 }
 
 /* Validate that the entry doesn't reach outside the listpack allocation. */
+// 检查下p是否在lp listpack内
 static inline void lpAssertValidEntry(unsigned char* lp, size_t lpbytes, unsigned char *p) {
     assert(lpValidateNext(lp, &p, lpbytes));
 }

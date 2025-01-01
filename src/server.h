@@ -312,11 +312,11 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CLIENT_BLOCKED (1<<4) /* 当前client被阻塞在需要等待的操作如bpop等 The client is waiting in a blocking operation */
 #define CLIENT_DIRTY_CAS (1<<5) /* Watched keys modified. EXEC will fail. */
 #define CLIENT_CLOSE_AFTER_REPLY (1<<6) /* 写完整个响应数据后关闭 Close after writing entire reply. */
-#define CLIENT_UNBLOCKED (1<<7) /* This client was unblocked and is stored in
+#define CLIENT_UNBLOCKED (1<<7) /* 当前client需要解除阻塞 This client was unblocked and is stored in
                                   server.unblocked_clients */
 #define CLIENT_SCRIPT (1<<8) /* 是一个假client，用于lua This is a non connected client used by Lua */
 #define CLIENT_ASKING (1<<9)     /* Client issued the ASKING command */
-#define CLIENT_CLOSE_ASAP (1<<10)/* Close this client ASAP */
+#define CLIENT_CLOSE_ASAP (1<<10)/* 尽快（立即）关闭client */
 #define CLIENT_UNIX_SOCKET (1<<11) /* Client connected via Unix domain socket */
 #define CLIENT_DIRTY_EXEC (1<<12)  /* EXEC will fail for errors while queueing */
 #define CLIENT_MASTER_FORCE_REPLY (1<<13)  /* Queue replies even if is master */
@@ -633,17 +633,15 @@ typedef enum {
 #define BUSY_MODULE_YIELD_CLIENTS (1<<1)
 
 /*-----------------------------------------------------------------------------
- * Data types
+ * 数据类型
  *----------------------------------------------------------------------------*/
 
-/* A redis object, that is a type able to hold a string / list / set */
-
-/* The actual Redis Object */
-#define OBJ_STRING 0    /* String object. */
-#define OBJ_LIST 1      /* List object. */
-#define OBJ_SET 2       /* Set object. */
-#define OBJ_ZSET 3      /* Sorted set object. */
-#define OBJ_HASH 4      /* Hash object. */
+/* redis对象类型 */
+#define OBJ_STRING 0    /* 字符串 */
+#define OBJ_LIST 1      /* 列表 */
+#define OBJ_SET 2       /* 无序集合 */
+#define OBJ_ZSET 3      /* 有序集合 */
+#define OBJ_HASH 4      /* 哈希 */
 
 /* The "module" object type is a special one that signals that the object
  * is one directly managed by a Redis module. In this case the value points
@@ -853,7 +851,7 @@ typedef struct redisObject {
                             * LFU data (least significant 8 bits frequency
                             * and most significant 16 bits access time). */
     int refcount;//该redisObj实例被引用的次数，共享实例节约内存
-    void *ptr;//指向的数据
+    void *ptr;//robj实例指向的数据（指向底层的结构体，如ziplist，listpack，sds等）
 } robj;//redis对象
 
 /* The a string name for an object's type as listed above
@@ -877,9 +875,9 @@ struct evictionPoolEntry; /* Defined in evict.c */
 /* This structure is used in order to represent the output buffer of a client,
  * which is actually a linked list of blocks like that, that is: client->reply. */
 typedef struct clientReplyBlock {
-    size_t size, used;
-    char buf[];
-} clientReplyBlock;
+    size_t size, used;//总空间大小，已用空间大小
+    char buf[];//静态缓冲
+} clientReplyBlock;//用户存放准备发送给客户端的响应数据
 
 /* Replication buffer blocks is the list of replBufBlock.
  *
@@ -1104,7 +1102,7 @@ typedef struct client {
     int reqtype;            /* Request protocol type: PROTO_REQ_* */
     int multibulklen;       /* Number of multi bulk arguments left to read. */
     long bulklen;           /* Length of bulk argument in multi bulk request. */
-    list *reply;            /* List of reply objects to send to the client. */
+    list *reply;            /* 要发给客户端的响应对象列表，动态链表缓冲区，当响应数据超过 buf 的大小限制时，Redis 会使用 reply，适用于大数据量或多次追加的场景。 */
     unsigned long long reply_bytes; /* reply列表里的对象的总字节数 Tot bytes of objects in reply list. */
     list *deferred_reply_errors;    /* Used for module thread safe contexts. */
     size_t sentlen;         /* 已发出数据的字节数 Amount of bytes already sent in the current
@@ -1137,9 +1135,9 @@ typedef struct client {
     int slave_capa;         /* Slave capabilities: SLAVE_CAPA_* bitwise OR. */
     int slave_req;          /* Slave requirements: SLAVE_REQ_* */
     multiState mstate;      /* MULTI/EXEC 状态 */
-    int btype;              /* Type of blocking op if CLIENT_BLOCKED. */
+    int btype;              /* 阻塞类型 Type of blocking op if CLIENT_BLOCKED. */
     blockingState bpop;     /* blocking state */
-    long long woff;         /* Last write global replication offset. */
+    long long woff;         /* "write offset"写偏移量，主要用于 AOF 持久化机制。Last write global replication offset. */
     list *watched_keys;     /* Keys WATCHED for MULTI/EXEC CAS */
     dict *pubsub_channels;  /* channels a client is interested in (SUBSCRIBE) */
     list *pubsub_patterns;  /* patterns a client is interested in (SUBSCRIBE) */
@@ -1182,12 +1180,12 @@ typedef struct client {
     size_t ref_block_pos;        /* Access position of referenced buffer block,
                                   * i.e. the next offset to send. */
 
-    /* Response buffer */
-    size_t buf_peak; /* 在最后5秒的时间内，buffer已用空间的峰值 Peak used size of buffer in last 5 sec interval. */
+    /* 响应缓冲 */
+    size_t buf_peak; /* 在最近5秒的时间内，buffer已用空间的峰值 Peak used size of buffer in last 5 sec interval. */
     mstime_t buf_peak_last_reset_time; /* keeps the last time the buffer peak value was reset */
     int bufpos; //一般等于c->buf的长度
     size_t buf_usable_size; /* buffer可用空间的大小 Usable size of buffer. */
-    char *buf;
+    char *buf; // 固定缓冲区大小，用于快速存储和发送小型的响应数据。它可以避免动态分配内存带来的开销（避免频繁分配和释放内存），提高效率。默认16K
 } client;
 
 struct saveparam {
@@ -1514,9 +1512,9 @@ struct redisServer {
     list *clients;              /* 当前所有建立连接的client集合 List of active clients */
     list *clients_to_close;     /* 需要异步关闭的client Clients to close asynchronously */
     list *clients_pending_write; /* 等待发出响应数据的客户端队列（全局任务队列） There is to write or install handler. */
-    list *clients_pending_read;  /* 等待读取read buf的客户端队列 Client has pending read socket buffers. */
+    list *clients_pending_read;  /* 等待读取querybuf的客户端队列 Client has pending read socket buffers. */
     list *slaves, *monitors;    /* List of slaves and MONITORs */
-    client *current_client;     /* Current client executing the command. */
+    client *current_client;     /* 指向当前正在由 Redis 主线程处理（命令）的客户端 Current client executing the command. */
 
     /* Stuff for client mem eviction */
     clientMemUsageBucket client_mem_usage_buckets[CLIENT_MEM_USAGE_BUCKETS];
@@ -1818,7 +1816,7 @@ struct redisServer {
     /* Blocked clients */
     unsigned int blocked_clients;   /* # of clients executing a blocking cmd.*/
     unsigned int blocked_clients_by_type[BLOCKED_NUM];
-    list *unblocked_clients; /* list of clients to unblock before next loop */
+    list *unblocked_clients; /* 等待解除阻塞的client列表 list of clients to unblock before next loop */
     list *ready_keys;        /* List of readyList structures for BLPOP & co */
     /* Client side caching. */
     unsigned int tracking_clients;  /* # of clients with tracking enabled.*/

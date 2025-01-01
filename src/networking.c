@@ -261,19 +261,15 @@ void putClientInPendingWriteQueue(client *c) {
     }
 }
 
-/* This function is called every time we are going to transmit new data
- * to the client. The behavior is the following:
+/* 当要把数据传给客户端时，都得调用本函数
+ * 具体行为有：
  *
- * If the client should receive new data (normal clients will) the function
- * returns C_OK, and make sure to install the write handler in our event
- * loop so that when the socket is writable new data gets written.
+ * 如果是普通客户端，该函数返回C_OK，并且确保write handler已经在事件循环里注册了，
+ * 这样当socket可写时，新数据就会被发送给客户端
  *
- * If the client should not receive new data, because it is a fake client
- * (used to load AOF in memory), a master or because the setup of the write
- * handler failed, the function returns C_ERR.
+ * 如果客户端是伪客户端（如用于内存AOF），master/slave，或write handler注册失败，该函数返回C_ERR
  *
- * The function may return C_OK without actually installing the write
- * event handler in the following cases:
+ * 当出现以下情况时，即便没有注册write handler，该函数也返回C_OK：
  *
  * 1) The event handler should already be installed since the output buffer
  *    already contains something.
@@ -325,22 +321,24 @@ int prepareClientToWrite(client *c) {
  * Sanitizer suppression: client->buf_usable_size determined by
  * zmalloc_usable_size() call. Writing beyond client->buf boundaries confuses
  * sanitizer and generates a false positive out-of-bounds error */
-REDIS_NO_SANITIZE("bounds")
-//把s指向的数据复制到c->buf里
+REDIS_NO_SANITIZE("bounds") //禁用 ASan 的边界检查，避免误报这段代码存在越界访问（因为代理里已有手动检查）
+//把s指向的数据复制到c->reply或c->buf里
 size_t _addReplyToBuffer(client *c, const char *s, size_t len) {
     size_t available = c->buf_usable_size - c->bufpos;
 
     /* If there already are entries in the reply list, we cannot
      * add anything more to the static buffer. */
-    // 如果reply list里已经有entries了，那么不能再往该静态缓冲添加了
+    // 如果reply里已经有entries了，那么不能再往该静态缓冲添加了。因为如果reply有数据
+    // 说明之前的数据还没发完，因此为了保证顺序，只能把后续新数据放入到reply而不能放入到buf，否则
+    // buf的数据也发送出去，会导致顺序混乱
     if (listLength(c->reply) > 0) return 0;
 
-    //把s指向的数据，复制到c->buf里
+    //把s指向的数据，复制到c->buf静态缓冲里
     size_t reply_len = len > available ? available : len;
-    memcpy(c->buf+c->bufpos,s,reply_len);
+    memcpy(c->buf+c->bufpos,s,reply_len);//这里使用了内存复制，会有性能开销
     c->bufpos+=reply_len;
-    /* We update the buffer peak after appending the reply to the buffer */
-    // 添加reply相应数据到buffer后，更新buf_peak值
+
+    // 添加响应数据s到buffer后，更新buf_peak值
     if(c->buf_peak < (size_t)c->bufpos)
         c->buf_peak = (size_t)c->bufpos;
     return reply_len;
@@ -349,7 +347,7 @@ size_t _addReplyToBuffer(client *c, const char *s, size_t len) {
 /* Adds the reply to the reply linked list.
  * Note: some edits to this function need to be relayed to AddReplyFromClient. */
 void _addReplyProtoToList(client *c, const char *s, size_t len) {
-    listNode *ln = listLast(c->reply);
+    listNode *ln = listLast(c->reply);//取出reply的最后一个节点
     clientReplyBlock *tail = ln? listNodeValue(ln): NULL;
 
     /* Note that 'tail' may be NULL even if we have a tail node, because when
@@ -358,8 +356,7 @@ void _addReplyProtoToList(client *c, const char *s, size_t len) {
 
     /* Append to tail string when possible. */
     if (tail) {
-        /* Copy the part we can fit into the tail, and leave the rest for a
-         * new node */
+        // 把响应数据添加到尾部节点的缓冲里，如果尾部节点的缓冲空间不够，那新建一个节点来存放剩下的响应数据
         size_t avail = tail->size - tail->used;
         size_t copy = avail >= len? len: avail;
         memcpy(tail->buf + tail->used, s, copy);
@@ -368,6 +365,7 @@ void _addReplyProtoToList(client *c, const char *s, size_t len) {
         len -= copy;
     }
     if (len) {
+        //还有部分响应数据未放入缓冲，新建一个至少PROTO_REPLY_CHUNK_BYTES空间的节点来存放
         /* Create a new node, make sure it is allocated to at
          * least PROTO_REPLY_CHUNK_BYTES */
         size_t usable_size;
@@ -384,7 +382,7 @@ void _addReplyProtoToList(client *c, const char *s, size_t len) {
     }
 }
 
-//把给c的响应数据加到buffer或list里等待发送
+//把给客户端的响应数据添加到buffer或list里等待发送
 void _addReplyToBufferOrList(client *c, const char *s, size_t len) {
     if (c->flags & CLIENT_CLOSE_AFTER_REPLY) return;
 
@@ -411,11 +409,11 @@ void _addReplyToBufferOrList(client *c, const char *s, size_t len) {
 /* Add the object 'obj' string representation to the client output buffer. */
 // 把robj添加到c的待发送缓冲里，等待发送给客户端
 void addReply(client *c, robj *obj) {
-    if (prepareClientToWrite(c) != C_OK) return;
+    if (prepareClientToWrite(c) != C_OK) return;//客户端没有准备好接收数据
 
-    if (sdsEncodedObject(obj)) {//返回的robj实例是sds
+    if (sdsEncodedObject(obj)) {//返回的robj实例底层编码类型是raw sds 或 内嵌sds
         _addReplyToBufferOrList(c,obj->ptr,sdslen(obj->ptr));
-    } else if (obj->encoding == OBJ_ENCODING_INT) {//返回的robj实例是整型
+    } else if (obj->encoding == OBJ_ENCODING_INT) {//返回的robj实例底层编码类型是整型
         /* For integer encoded strings we just convert it into a string
          * using our optimized function, and attach the resulting string
          * to the output buffer. */
@@ -921,6 +919,7 @@ void addReplyLongLongWithPrefix(client *c, long long ll, char prefix) {
     addReplyProto(c,buf,len+3);
 }
 
+// ll创建个数
 void addReplyLongLong(client *c, long long ll) {
     if (ll == 0)
         addReply(c,shared.czero);
@@ -1491,7 +1490,7 @@ void unlinkClient(client *c) {
         c->conn = NULL;
     }
 
-    /* Remove from the list of pending writes if needed. */
+    /* 如果当前客户端还处于等待写（发出）响应数据的状态，则移除 */
     if (c->flags & CLIENT_PENDING_WRITE) {
         ln = listSearchKey(server.clients_pending_write,c);
         serverAssert(ln != NULL);
@@ -1596,7 +1595,7 @@ void freeClient(client *c) {
      *
      * Note that before doing this we make sure that the client is not in
      * some unexpected state, by checking its flags. */
-    if (server.master && c->flags & CLIENT_MASTER) {
+    if (server.master && c->flags & CLIENT_MASTER) {//本redis实例是从节点，并且对端是master客户端
         serverLog(LL_WARNING,"Connection with master lost.");
         if (!(c->flags & (CLIENT_PROTOCOL_ERROR|CLIENT_BLOCKED))) {
             c->flags &= ~(CLIENT_CLOSE_ASAP|CLIENT_CLOSE_AFTER_REPLY);
@@ -1606,19 +1605,19 @@ void freeClient(client *c) {
     }
 
     /* Log link disconnection with slave */
-    if (getClientType(c) == CLIENT_TYPE_SLAVE) {
+    if (getClientType(c) == CLIENT_TYPE_SLAVE) {//对端是slave客户端
         serverLog(LL_WARNING,"Connection with replica %s lost.",
             replicationGetSlaveName(c));
     }
 
     /* Free the query buffer */
-    // 释放query缓冲
+    // 释放查询缓冲query
     sdsfree(c->querybuf);
     c->querybuf = NULL;
 
     /* Deallocate structures used to block on blocking ops. */
     if (c->flags & CLIENT_BLOCKED) unblockClient(c);
-    dictRelease(c->bpop.keys);
+    dictRelease(c->bpop.keys);//释放字典空间
 
     /* UNWATCH all the keys */
     unwatchAllKeys(c);
@@ -1713,7 +1712,7 @@ void freeClient(client *c) {
  * This function is useful when we need to terminate a client but we are in
  * a context where calling freeClient() is not possible, because the client
  * should be valid for the continuation of the flow of the program. */
-// 把client加到异步关闭链表里，等待异步释放client，即在serverCron()函数里释放client
+// 把client加到异步关闭链表里等待释放，即在serverCron()函数里定时释放client
 void freeClientAsync(client *c) {
     /* We need to handle concurrent access to the server.clients_to_close list
      * only in the freeClientAsync() function, since it's the only function that
@@ -1759,8 +1758,8 @@ void logInvalidUseAndFreeClientAsync(client *c, const char *fmt, ...) {
  * The input client argument: c, may be NULL in case the previous client was
  * freed before the call. */
 int beforeNextClient(client *c) {
-    /* Skip the client processing if we're in an IO thread, in that case we'll perform
-       this operation later (this function is called again) in the fan-in stage of the threading mechanism */
+    /* 如果当前函数是在 I/O 线程中执行，则跳过某些操作（例如处理命令或更新状态）。
+     * 这些操作会稍后在主线程的“合并阶段”（fan-in stage）执行。 */
     if (io_threads_op != IO_THREADS_OP_IDLE)
         return C_OK;//io线程处于空闲状态
     /* Handle async frees */
@@ -2618,8 +2617,9 @@ int processInputBuffer(client *c) {
 
     return C_OK;
 }
-//当epoll触发读事件时，回调本函数对连接进行数据读取
+
 /*
+ * 当epoll触发读事件时，回调本函数对连接进行数据读取
  * 具体逻辑有
  * 放入异步io线程读取client数据（可选）
  * 统计已处理的读事件个数+1
@@ -3816,6 +3816,14 @@ int checkClientOutputBufferLimits(client *c) {
  * useful when called from cron.
  *
  * Returns 1 if client was (flagged) closed. */
+/*
+ * 检测和处理客户端输出缓冲区（output buffer）限制的函数。其作用是判断客户端的输出缓冲区是否超出了预定义的限制，并在必要时关闭该客户端连接。
+ * 目的是维护 Redis 服务器的稳定性，防止客户端因发送过多数据而导致内存消耗过高或引发性能问题。
+ *
+ * async：
+ * 1（异步关闭）：仅标记客户端为待关闭状态，稍后在事件循环中处理。
+ * 0（同步关闭）：立即关闭客户端连接。
+ */
 int closeClientOnOutputBufferLimitReached(client *c, int async) {
     if (!c->conn) return 0; /* It is unsafe to free fake clients. */
     serverAssert(c->reply_bytes < SIZE_MAX-(1024*64));
@@ -4183,6 +4191,7 @@ void startThreadedIO(void) {
         pthread_mutex_unlock(&io_threads_mutex[j]); // 对各IO线程解锁
     server.io_threads_active = 1;//标记IO线程已激活
 }
+
 //终止/关闭 多线程IO
 void stopThreadedIO(void) {
     /* 当在调用本函数时，clients_pending_read队列里可能还有client等待被处理，

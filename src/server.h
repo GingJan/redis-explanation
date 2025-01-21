@@ -1462,7 +1462,7 @@ struct redisServer {
     aeEventLoop *el;            /* eventloop 事件循环实例 */
     rax *errors;                /* Errors table */
     redisAtomic unsigned int lruclock; /* LRU淘汰策略的时钟 Clock for LRU eviction */
-    volatile sig_atomic_t shutdown_asap; /* Shutdown ordered by signal handler. */
+    volatile sig_atomic_t shutdown_asap; /* 由信号处理handler关闭 Shutdown ordered by signal handler. */
     mstime_t shutdown_mstime;   /* Timestamp to limit graceful shutdown. */
     int last_sig_received;      /* 最后收到的信号 Indicates the last SIGNAL received, if any (e.g., SIGINT or SIGTERM). */
     int shutdown_flags;         /* Flags passed to prepareForShutdown(). */

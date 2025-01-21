@@ -63,7 +63,7 @@ typedef ucontext_t sigcontext_t;
 
 /* Globals */
 static int bug_report_start = 0; /* True if bug report header was already logged. */
-static pthread_mutex_t bug_report_start_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t bug_report_start_mutex = PTHREAD_MUTEX_INITIALIZER;//线程互斥锁
 
 /* Forward declarations */
 void bugReportStart(void);
@@ -1112,6 +1112,7 @@ void _serverPanic(const char *file, int line, const char *msg, ...) {
     bugReportEnd(0, 0);
 }
 
+//记录日志
 void bugReportStart(void) {
     pthread_mutex_lock(&bug_report_start_mutex);
     if (bug_report_start == 0) {

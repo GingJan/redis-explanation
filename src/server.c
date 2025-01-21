@@ -80,8 +80,8 @@ double R_Zero, R_PosInf, R_NegInf, R_Nan;
 
 /*================================= Globals ================================= */
 
-/* Global vars */
-struct redisServer server; /* Server global state */
+/* 全局变量 Global vars */
+struct redisServer server; /* 全局Server实例 Server global state */
 
 /*============================ Internal prototypes ========================== */
 
@@ -2442,12 +2442,13 @@ void makeThreadKillable(void) {
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 }
 
+//初始化server，核心，包含tcp连接监听初始化，eventLoop事件循环，定时器等
 void initServer(void) {
     int j;
 
     signal(SIGHUP, SIG_IGN);//忽略SIGHUP信号
     signal(SIGPIPE, SIG_IGN);//忽悠SIGPIPE信号
-    setupSignalHandlers();//设置信号处理函数
+    setupSignalHandlers();//设置系统信号处理函数
     makeThreadKillable();
 
     if (server.syslog_enabled) {
@@ -6379,7 +6380,8 @@ int changeListenPort(int port, socketFds *sfd, aeFileProc *accept_handler) {
 
     return C_OK;
 }
-//SIGTERM 或 SIGINT 时，调用该函数
+
+//收到SIGTERM 或 SIGINT 信号时，调用该函数
 static void sigShutdownHandler(int sig) {
     char *msg;
 
@@ -6394,15 +6396,13 @@ static void sigShutdownHandler(int sig) {
         msg = "Received shutdown signal, scheduling shutdown...";
     };
 
-    /* SIGINT is often delivered via Ctrl+C in an interactive session.
-     * If we receive the signal the second time, we interpret this as
-     * the user really wanting to quit ASAP without waiting to persist
-     * on disk and without waiting for lagging replicas. */
-    if (server.shutdown_asap && sig == SIGINT) {
+    /* SIGINT常在交互终端里通过Ctrl+C发出，如果该信号发出了两次，则说明用户想尽快退出，
+     * 则server不再等待数据持久化完成，也不等待主从复制完成，马上结束进程 */
+    if (server.shutdown_asap && sig == SIGINT) {//用户坚持要尽快退出
         serverLogFromHandler(LL_WARNING, "You insist... exiting now.");
         rdbRemoveTempFile(getpid(), 1);// 删除rdb临时文件
-        exit(1); /* Exit with an error since this was not a clean shutdown. */
-    } else if (server.loading) {//当正在从磁盘加载数据时，先不关闭
+        exit(1); /* 带错误码退出，因为不是优雅关闭 */
+    } else if (server.loading) {//当前正在从磁盘加载数据，先不关闭
         msg = "Received shutdown signal during loading, scheduling shutdown.";
     }
 
@@ -6410,6 +6410,7 @@ static void sigShutdownHandler(int sig) {
     server.shutdown_asap = 1;
     server.last_sig_received = sig;
 }
+
 //设置信号处理函数
 void setupSignalHandlers(void) {
     struct sigaction act;

@@ -89,7 +89,7 @@ typedef struct aeFiredEvent {
     int mask;//事件需要进行的操作，0001读，0010写，0100，当这个fd同时有读写事件时，mask=0011
 } aeFiredEvent;
 
-/* 基于事件状态的程序 */
+/* 时间循环，基于事件状态的程序 */
 typedef struct aeEventLoop {
     int maxfd;   /* 当前已注册的最大fd（注fd是一个整型数字） */
     int setsize; /* 可注册？还是已注册？ 的fd的数量 */

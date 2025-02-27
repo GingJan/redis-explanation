@@ -404,13 +404,13 @@ int anetUnixGenericConnect(char *err, const char *path, int flags)
 }
 //调用系统函数bind和listen对地址端口进行绑定和监听
 static int anetListen(char *err, int s, struct sockaddr *sa, socklen_t len, int backlog) {
-    if (bind(s,sa,len) == -1) {
+    if (bind(s,sa,len) == -1) {//ip+端口 绑定 fd（这里是s）
         anetSetError(err, "bind: %s", strerror(errno));
         close(s);
         return ANET_ERR;
     }
 
-    if (listen(s, backlog) == -1) {
+    if (listen(s, backlog) == -1) {//监听 fd（这里是s）
         anetSetError(err, "listen: %s", strerror(errno));
         close(s);
         return ANET_ERR;

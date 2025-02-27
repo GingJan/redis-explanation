@@ -455,6 +455,7 @@ int overMaxmemoryAfterAlloc(size_t moremem) {
  * eviction cycles until the "maxmemory" condition has resolved or there are no
  * more evictable items.  */
 static int isEvictionProcRunning = 0;
+// 定时任务（时间事件）
 static int evictionTimeProc(struct aeEventLoop *eventLoop, long long id, void *clientData) {// timerProc
     UNUSED(eventLoop);
     UNUSED(id);

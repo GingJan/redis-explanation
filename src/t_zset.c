@@ -104,7 +104,7 @@ void zslFreeNode(zskiplistNode *node) {
 
 /* Free a whole skiplist. */
 void zslFree(zskiplist *zsl) {
-    zskiplistNode *node = zsl->header->level[0].forwardv, *next;
+    zskiplistNode *node = zsl->header->level[0].forward, *next;
 
     zfree(zsl->header);
     while(node) {

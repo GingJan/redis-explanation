@@ -1341,6 +1341,7 @@ void removeRDBUsedToSyncReplicas(void) {
     }
 }
 
+//这个是write_handler之一
 void sendBulkToSlave(connection *conn) {
     client *slave = connGetPrivateData(conn);
     char buf[PROTO_IOBUF_LEN];
@@ -1414,7 +1415,7 @@ void rdbPipeWriteHandlerConnRemoved(struct connection *conn) {
     }
 }
 
-/* Called in diskless master during transfer of data from the rdb pipe, when
+/* 这个是write_handler之一 Called in diskless master during transfer of data from the rdb pipe, when
  * the replica becomes writable again. */
 void rdbPipeWriteHandler(struct connection *conn) {
     serverAssert(server.rdb_pipe_bufflen>0);
@@ -1623,7 +1624,10 @@ void updateSlavesWaitingBgsave(int bgsaveerr, int type) {
 /* Change the current instance replication ID with a new, random one.
  * This will prevent successful PSYNCs between this master and other
  * slaves, so the command should be called when something happens that
- * alters the current story of the dataset. */
+ * alters the current story of the dataset.
+ *
+ * 生成本副本的标识
+ */
 void changeReplicationId(void) {
     getRandomHexChars(server.replid,CONFIG_RUN_ID_SIZE);
     server.replid[CONFIG_RUN_ID_SIZE] = '\0';
@@ -1796,7 +1800,7 @@ void replicationAttachToNewMaster() {
     freeReplicationBacklog(); /* Don't allow our chained replicas to PSYNC. */
 }
 
-/* Asynchronously read the SYNC payload we receive from a master */
+/* 异步读取从主节点收到的SYNC命令的数据 Asynchronously read the SYNC payload we receive from a master */
 #define REPL_MAX_WRITTEN_BEFORE_FSYNC (1024*1024*8) /* 8 MB */
 void readSyncBulkPayload(connection *conn) {
     char buf[PROTO_IOBUF_LEN];
@@ -2523,7 +2527,7 @@ int slaveTryPartialResynchronization(connection *conn, int read_reply) {
     return PSYNC_NOT_SUPPORTED;
 }
 
-/* 当发起的非阻塞连接与master建立连接后，本函数将被调用 */
+/* 当发起的非阻塞连接与主节点建立连接后，本函数将被调用 */
 void syncWithMaster(connection *conn) {
     char tmpfile[256], *err = NULL;
     int dfd = -1, maxtries = 5;
@@ -3309,8 +3313,8 @@ void replicationResurrectCachedMaster(connection *conn) {
 
     /* We may also need to install the write handler as well if there is
      * pending data in the write buffers. */
-    if (clientHasPendingReplies(server.master)) {
-        if (connSetWriteHandler(server.master->conn, sendReplyToClient)) {
+    if (clientHasPendingReplies(server.master)) {//如果还有待发送给主的数据
+        if (connSetWriteHandler(server.master->conn, sendReplyToClient)) {//则再注册一次可写事件监听
             serverLog(LL_WARNING,"Error resurrecting the cached master, impossible to add the writable handler: %s", strerror(errno));
             freeClientAsync(server.master); /* Close ASAP. */
         }
@@ -3383,7 +3387,8 @@ void replicationRequestAckFromSlaves(void) {
     server.get_ack_from_slaves = 1;
 }
 
-/* Return the number of slaves that already acknowledged the specified
+/* 返回有多少个slave的ack offset 是大于传入offset
+ * Return the number of slaves that already acknowledged the specified
  * replication offset. */
 int replicationCountAcksByOffset(long long offset) {
     listIter li;
@@ -3394,8 +3399,8 @@ int replicationCountAcksByOffset(long long offset) {
     while((ln = listNext(&li))) {
         client *slave = ln->value;
 
-        if (slave->replstate != SLAVE_STATE_ONLINE) continue;
-        if (slave->repl_ack_off >= offset) count++;
+        if (slave->replstate != SLAVE_STATE_ONLINE) continue;//如果slave不是处于SLAVE_STATE_ONLINE状态，则跳过
+        if (slave->repl_ack_off >= offset) count++;//如果该slave的ack offset已经大于指定的offset
     }
     return count;
 }

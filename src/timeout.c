@@ -31,8 +31,11 @@
 
 /* ========================== Clients timeouts ============================= */
 
-/* Check if this blocked client timedout (does nothing if the client is
- * not blocked right now). If so send a reply, unblock it, and return 1.
+/* 用于检查一个被阻塞的客户端是否已经超时。（如果client当前没有被阻塞，则不做任何操作）
+ * 如果已经超时，则发送响应并且解除阻塞，返回1。否则不执行任何操作并返回0
+ *
+ * Redis中，某些客户端可能会因执行命令（例如，BLPOP、BRPOP、BRPOPLPUSH 等）而被阻塞，直到满足某些条件（如收到新的数据）。
+ * 在这种情况下，Redis会记录客户端的阻塞时间，并且定期检查是否已超过设定的超时时间
  * Otherwise 0 is returned and no operation is performed. */
 int checkBlockedClientTimeout(client *c, mstime_t now) {
     if (c->flags & CLIENT_BLOCKED &&
@@ -131,10 +134,15 @@ void removeClientFromTimeoutTable(client *c) {
     raxRemove(server.clients_timeout_table,buf,sizeof(buf),NULL);
 }
 
-/* This function is called in beforeSleep() in order to unblock clients
- * that are waiting in blocking operations with a timeout set. */
+/* 用于扫描和处理那些 被阻塞 且超时的客户端。
+ * 超时的客户端通常是因为在等待某些条件的满足时（例如，阻塞队列为空）超出了预设的等待时间。
+ * 这个函数会：
+ * 1.遍历被阻塞的客户端（如有BLPOP等命令），检查阻塞客户端是否超时。
+ * 2.解除超时阻塞的客户端，让它们可以继续执行其他操作，或者返回错误信息
+ * */
 void handleBlockedClientsTimeout(void) {
     if (raxSize(server.clients_timeout_table) == 0) return;
+
     uint64_t now = mstime();
     raxIterator ri;
     raxStart(&ri,server.clients_timeout_table);
@@ -146,7 +154,7 @@ void handleBlockedClientsTimeout(void) {
         decodeTimeoutKey(ri.key,&timeout,&c);
         if (timeout >= now) break; /* All the timeouts are in the future. */
         c->flags &= ~CLIENT_IN_TO_TABLE;
-        checkBlockedClientTimeout(c,now);
+        checkBlockedClientTimeout(c,now);//处理那些含有阻塞等待命令的client
         raxRemove(server.clients_timeout_table,ri.key,ri.key_len,NULL);
         raxSeek(&ri,"^",NULL,0);
     }

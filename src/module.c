@@ -2103,7 +2103,7 @@ void RM_Yield(RedisModuleCtx *ctx, int flags, const char *busy_reply) {
          * commands with -LOADING. */
         if (server.loading) {
             /* Let redis process events */
-            processEventsWhileBlocked();
+            processEventsWhileBlocked();//如果正在加载磁盘的数据，那就中断一下，让一些任务能执行
         } else {
             const char *prev_busy_module_yield_reply = server.busy_module_yield_reply;
             server.busy_module_yield_reply = busy_reply;
@@ -2118,7 +2118,7 @@ void RM_Yield(RedisModuleCtx *ctx, int flags, const char *busy_reply) {
                 server.busy_module_yield_flags |= BUSY_MODULE_YIELD_CLIENTS;
 
             /* Let redis process events */
-            processEventsWhileBlocked();
+            processEventsWhileBlocked();//中断下，让一些任务能执行
 
             server.busy_module_yield_reply = prev_busy_module_yield_reply;
             /* Possibly restore the previous flags in case of two nested contexts
@@ -8088,6 +8088,7 @@ typedef struct RedisModuleTimer {
 
 /* This is the timer handler that is called by the main event loop. We schedule
  * this timer to be called when the nearest of our module timers will expire. */
+// 定时任务（时间事件）
 int moduleTimerHandler(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     UNUSED(eventLoop);
     UNUSED(id);

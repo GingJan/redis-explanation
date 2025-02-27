@@ -32,13 +32,13 @@ typedef enum monotonic_clock_type {
 /* 在启动时调用一次以初始化monotonic时钟，尽管它只被调用一次，但多次调用也不会造成影响。
  * 返回一个可打印的字符串，该字符串表式时钟的类型
  * (返回的字符串是static的，无需释放内存空间。)  */
-const char *monotonicInit();
+const char *monotonicInit(void);
 
 /* 返回一个字符串，该字符串表式正被使用的monotonic时钟的类型。 */
-const char *monotonicInfoString();
+const char *monotonicInfoString(void);
 
 /* 返回正被使用的monotonic时钟的类型。 */
-monotonic_clock_type monotonicGetType();
+monotonic_clock_type monotonicGetType(void);
 
 /* 测量经过的时间，例如:
  *     monotime myTimer;

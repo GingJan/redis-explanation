@@ -121,7 +121,8 @@ void updateStatsOnUnblock(client *c, long blocked_us, long reply_us, int had_err
     latencyAddSampleIfNeeded("command-unblocking",reply_us/1000);
 }
 
-/* 本函数在事件循环的beforeSleep()函数里调用，这样是为了处理正在等待的clients的input buffer
+/* 本函数在事件循环的beforeSleep()函数里调用，
+ * 处理已从阻塞态里解除的且有正等待处理的input buffer 的 clients
  * in order to process the pending input buffer of clients that were
  * unblocked after a blocking operation. */
 void processUnblockedClients(void) {
@@ -130,17 +131,16 @@ void processUnblockedClients(void) {
 
     while (listLength(server.unblocked_clients)) {
         ln = listFirst(server.unblocked_clients);
-        serverAssert(ln != NULL);
+        serverAssert(ln != NULL);//抛出异常
         c = ln->value;
-        listDelNode(server.unblocked_clients,ln);
-        c->flags &= ~CLIENT_UNBLOCKED;
+        listDelNode(server.unblocked_clients,ln);//从队列里弹出
+        c->flags &= ~CLIENT_UNBLOCKED;//清除 CLIENT_UNBLOCKED 标志
 
-        /* Process remaining data in the input buffer, unless the client
-         * is blocked again. Actually processInputBuffer() checks that the
-         * client is not blocked before to proceed, but things may change and
-         * the code is conceptually more correct this way. */
-        if (!(c->flags & CLIENT_BLOCKED)) {//
-            /* If we have a queued command, execute it now. */
+        /* 在 Redis 中，某些命令（如 BLPOP 等阻塞命令）会使客户端进入阻塞状态，直到满足解除阻塞的条件（例如有新的数据可用）。
+         * 在继续处理输入缓冲区中的数据之前，要特别注意客户端是否处于阻塞状态，因为客户端可能在任何时候由于某些操作再次进入阻塞状态。
+         * 所以，虽然 processInputBuffer() 会检查阻塞状态，但为了代码的正确性和避免遗漏，最好在处理之前重新确认一次客户端的状态。. */
+        if (!(c->flags & CLIENT_BLOCKED)) {//确认c没有处于阻塞
+            /* 如果队列里有待处理的命令，则执行/处理它 */
             if (processPendingCommandAndInputBuffer(c) == C_ERR) {//执行client请求的命令
                 c = NULL;
             }
@@ -214,14 +214,14 @@ void unblockClient(client *c) {
     queueClientForReprocessing(c);
 }
 
-/* This function gets called when a blocked client timed out in order to
- * send it a reply of some kind. After this function is called,
- * unblockClient() will be called with the same client as argument. */
+/* 该函数在client超时后会被调用。以便发送响应数据给客户端
+ * 该函数执行完后，应该要调用unblockClient()函数并传入相同的client作为参数
+ */
 void replyToBlockedClientTimedOut(client *c) {
     if (c->btype == BLOCKED_LIST ||
         c->btype == BLOCKED_ZSET ||
         c->btype == BLOCKED_STREAM) {
-        addReplyNullArray(c);
+        addReplyNullArray(c);//添加数据截止的标识
     } else if (c->btype == BLOCKED_WAIT) {
         addReplyLongLong(c,replicationCountAcksByOffset(c->bpop.reploffset));
     } else if (c->btype == BLOCKED_MODULE) {

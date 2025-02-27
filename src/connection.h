@@ -49,7 +49,7 @@ typedef enum {
 } ConnectionState;//连接状态
 
 #define CONN_FLAG_CLOSE_SCHEDULED   (1<<0)      /* 由conn->close的handler执行关闭操作 Closed scheduled by a handler */
-#define CONN_FLAG_WRITE_BARRIER     (1<<1)      /* 写屏障标志 Write barrier requested */
+#define CONN_FLAG_WRITE_BARRIER     (1<<1)      /* 写屏障标志，当client->flag有这个标志时，则先处理写事件再处理读事件 Write barrier requested */
 
 #define CONN_TYPE_SOCKET            1
 #define CONN_TYPE_TLS               2
@@ -58,14 +58,14 @@ typedef void (*ConnectionCallbackFunc)(struct connection *conn);
 
 typedef struct ConnectionType { //实例有 CT_Socket 和 CT_TLS
     void (*ae_handler)(struct aeEventLoop *el, int fd, void *clientData, int mask);//当epoll有事件触发时，调用本函数，本函数的实现有 connSocketEventHandler()（connection.c） 或 tlsEventHandler()（tls.c）
-    int (*connect)(struct connection *conn, const char *addr, int port, const char *source_addr, ConnectionCallbackFunc connect_handler);
-    int (*write)(struct connection *conn, const void *data, size_t data_len);
+    int (*connect)(struct connection *conn, const char *addr, int port, const char *source_addr, ConnectionCallbackFunc connect_handler);//给connection.conn_handler注册处理函数，本方法的默认实现是 connSocketConnect
+    int (*write)(struct connection *conn, const void *data, size_t data_len); // 本方法的默认实现 connSocketWrite
     int (*writev)(struct connection *conn, const struct iovec *iov, int iovcnt);
     int (*read)(struct connection *conn, void *buf, size_t buf_len);
     void (*close)(struct connection *conn);
-    int (*accept)(struct connection *conn, ConnectionCallbackFunc accept_handler);
-    int (*set_write_handler)(struct connection *conn, ConnectionCallbackFunc handler, int barrier);
-    int (*set_read_handler)(struct connection *conn, ConnectionCallbackFunc handler); //本方法的实现是 connSocketSetReadHandler()（connection.c） 或 connTLSSetReadHandler()（tls.c）
+    int (*accept)(struct connection *conn, ConnectionCallbackFunc accept_handler);//本方法的默认实现 connSocketAccept，
+    int (*set_write_handler)(struct connection *conn, ConnectionCallbackFunc handler, int barrier);//给connection.write_handler注册处理函数，本方法的默认实现是 connSocketSetWriteHandler
+    int (*set_read_handler)(struct connection *conn, ConnectionCallbackFunc handler); //给connection.read_handler注册处理函数，本方法的默认实现是 connSocketSetReadHandler()（connection.c） 或 connTLSSetReadHandler()（tls.c）
     const char *(*get_last_error)(struct connection *conn);
     int (*blocking_connect)(struct connection *conn, const char *addr, int port, long long timeout);
     ssize_t (*sync_write)(struct connection *conn, char *ptr, ssize_t size, long long timeout);
@@ -80,11 +80,11 @@ struct connection {
     short int flags;
     short int refs;//当前conn正在被refs个handler处理中，当refs为0时，connection才可被释放，但可以先关闭连接close(fd)
     int last_errno;
-    void *private_data;//存着client
-    ConnectionCallbackFunc conn_handler; //conn的连接建立handler
-    ConnectionCallbackFunc write_handler; //conn的写handler，当发生写事件时，调用本函数
+    void *private_data;//存着client实例
+    ConnectionCallbackFunc conn_handler; //conn的连接建立handler clusterLinkConnectHandler 或 syncWithMaster
+    ConnectionCallbackFunc write_handler; //conn的写handler，当发生写事件时，调用本函数, sendReplyToClient 或 rdbPipeWriteHandler 或 sendBulkToSlave
     ConnectionCallbackFunc read_handler; //conn的读handler
-    int fd;
+    int fd; //连接的fd
 };
 
 /* The connection module does not deal with listening and accepting sockets,
@@ -104,7 +104,7 @@ struct connection {
  * connAccept() callers must always check the return value and on error (C_ERR)
  * a connClose() must be called.
  */
-
+// 给连接conn的accept事件设置回调handler =》 accept_handler
 static inline int connAccept(connection *conn, ConnectionCallbackFunc accept_handler) {
     return conn->type->accept(conn, accept_handler);
 }
@@ -118,6 +118,7 @@ static inline int connAccept(connection *conn, ConnectionCallbackFunc accept_han
  * If C_ERR is returned, the operation failed and the connection handler shall
  * not be expected.
  */
+//注册 连接建立 处理函数
 static inline int connConnect(connection *conn, const char *addr, int port, const char *src_addr,
         ConnectionCallbackFunc connect_handler) {
     return conn->type->connect(conn, addr, port, src_addr, connect_handler);
@@ -142,7 +143,7 @@ static inline int connBlockingConnect(connection *conn, const char *addr, int po
  */
 // 最终的发送数据给客户端
 static inline int connWrite(connection *conn, const void *data, size_t data_len) {
-    return conn->type->write(conn, data, data_len);
+    return conn->type->write(conn, data, data_len);// connSocketWrite 或 connTLSWrite
 }
 
 /* Gather output data from the iovcnt buffers specified by the members of the iov
@@ -155,11 +156,11 @@ static inline int connWrite(connection *conn, const void *data, size_t data_len)
  */
 // 最终的发送数据给客户端，本函数比connWrite()高效
 static inline int connWritev(connection *conn, const struct iovec *iov, int iovcnt) {
-    return conn->type->writev(conn, iov, iovcnt);
+    return conn->type->writev(conn, iov, iovcnt);// connSocketWritev 或 connTLSWritev
 }
 
-/* Read from the connection, behaves the same as read(2).
- * 
+/* 从连接读取数据，和read(2)的行为一致
+ * 就如read(2)，可能只是读取了一小部份数据，如果连接关闭了则返回0，发生错误则返回-1
  * Like read(2), a short read is possible.  A return value of 0 will indicate the
  * connection was closed, and -1 will indicate an error.
  *
@@ -174,6 +175,7 @@ static inline int connRead(connection *conn, void *buf, size_t buf_len) {
 /* Register a write handler, to be called when the connection is writable.
  * If NULL, the existing handler is removed.
  */
+//注册到 conn->write_handler
 static inline int connSetWriteHandler(connection *conn, ConnectionCallbackFunc func) {
     return conn->type->set_write_handler(conn, func, 0);
 }

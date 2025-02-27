@@ -60,6 +60,7 @@ static void enterScriptTimedoutMode(scriptRunCtx *run_ctx) {
     blockingOperationStarts();
 }
 
+//判断lua脚本的执行是否超时
 int scriptIsTimedout() {
     return scriptIsRunning() && (curr_run_ctx->flags & SCRIPT_TIMEDOUT);
 }
@@ -74,16 +75,15 @@ client* scriptGetCaller() {
     return curr_run_ctx->original_client;
 }
 
-/* interrupt function for scripts, should be call
- * from time to time to reply some special command (like ping)
- * and also check if the run should be terminated. */
+/* 中断脚本的执行，它主要用于在执行 Redis 脚本时定期检查是否需要 终止脚本，
+ * 并处理一些特殊命令（如 PING）的响应。这个函数的设计目的是为了保证 Redis 在执行脚本时能够响应客户端的请求，
+ * 避免阻塞或死锁，尤其是在执行时间较长的脚本时 */
 int scriptInterrupt(scriptRunCtx *run_ctx) {
     if (run_ctx->flags & SCRIPT_TIMEDOUT) {//脚本超时
         /* script already timedout
            we just need to precess some events and return */
-        // 脚本已超时，此时需要处理一些文件事件并返回
-        processEventsWhileBlocked();
-        return (run_ctx->flags & SCRIPT_KILLED) ? SCRIPT_KILL : SCRIPT_CONTINUE;
+        processEventsWhileBlocked();//Lua脚本超时，此时处理一些文件事件并返回
+        return (run_ctx->flags & SCRIPT_KILLED) ? SCRIPT_KILL : SCRIPT_CONTINUE;//脚本是否被用户使用SCRIPT KILL命令终结
     }
 
     long long elapsed = elapsedMs(run_ctx->start_time);
@@ -97,14 +97,21 @@ int scriptInterrupt(scriptRunCtx *run_ctx) {
             elapsed, (run_ctx->flags & SCRIPT_EVAL_MODE) ? "SCRIPT KILL" : "FUNCTION KILL");
 
     enterScriptTimedoutMode(run_ctx);
-    /* Once the script timeouts we reenter the event loop to permit others
-     * some commands execution. For this reason
-     * we need to mask the client executing the script from the event loop.
-     * If we don't do that the client may disconnect and could no longer be
-     * here when the EVAL command will return. */
+    /* 当一个脚本执行超时（通常是由于脚本执行时间过长或执行了阻塞操作），Redis 会 重新进入事件循环，以便能够让其他命令得以执行。
+    •* 这是因为 Redis 在处理 Lua 脚本时会进入一个 阻塞 状态。即使脚本正在执行，Redis 也会停止处理其他客户端请求，直到脚本执行完成。
+     * 为了避免这个阻塞影响到其他客户端的请求（比如其他客户端的读写命令），当脚本超时后，Redis 会切换回事件循环，允许其他命令的执行。
+     * 为了避免某些副作用，Redis 必须屏蔽正在执行脚本的客户端（即，将它从事件循环中暂时移除），确保该客户端不会在脚本执行超时期间发生意外的行为。
+     * 那么为什么需要屏蔽呢？
+     * 这是因为：如果没有屏蔽正在执行脚本的客户端，它可能会在超时或事件循环恢复后被 错误地断开连接 或 出错，导致 Redis 无法正常完成 EVAL 命令的处理。
+     * 这样做的原因是，如果 Redis 允许其他命令在脚本执行期间中断当前客户端的连接，那么脚本的执行就无法正常返回结果，可能导致客户端丢失其原本的响应。
+     * 如果没有屏蔽客户端，可能发生的情况是：
+     * 该客户端正在执行 EVAL 命令，但是由于事件循环的恢复，其他命令被执行了，可能导致客户端连接断开（被其他逻辑关闭）。
+     * 一旦客户端被断开，当 EVAL 命令完成时，它无法将结果发送回断开的客户端，因为客户端已经不存在。
+     * 这种情况下，Redis 就无法正确地完成脚本执行并向客户端返回结果。为了解决这个问题，Redis 必须 屏蔽客户端，确保它不会在脚本超时期间断开或被意外释放。
+     * */
     protectClient(run_ctx->original_client);
 
-    processEventsWhileBlocked();
+    processEventsWhileBlocked();//在lua脚本执行时
 
     return (run_ctx->flags & SCRIPT_KILLED) ? SCRIPT_KILL : SCRIPT_CONTINUE;
 }

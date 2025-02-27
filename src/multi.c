@@ -138,6 +138,7 @@ void execCommandAbort(client *c, sds error) {
     replicationFeedMonitors(c,server.monitors,c->db->id,c->argv,c->argc);
 }
 
+//本函数是 MULTI/EXEC 事务机制的核心函数之一，其主要作用是执行客户端已被记录的事务命令队列。
 void execCommand(client *c) {
     int j;
     robj **orig_argv;

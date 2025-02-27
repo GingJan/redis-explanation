@@ -36,6 +36,7 @@
 #include "listpack.h"
 #include "util.h" /* for ll2string */
 #include "lzf.h"
+#include <assert.h>
 #include "redisassert.h"
 
 #ifndef REDIS_STATIC

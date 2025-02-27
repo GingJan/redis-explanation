@@ -108,7 +108,9 @@ static void (*zmalloc_oom_handler)(size_t) = zmalloc_default_oom;
 // 尝试分配内存，分配失败返回NULL。若非NULL，传入的*usable参数会被设为成功分配内存的大小（字节），同时统计总共分配了多少字节的内存
 void *ztrymalloc_usable(size_t size, size_t *usable) {
     ASSERT_NO_SIZE_OVERFLOW(size);
-    void *ptr = malloc(MALLOC_MIN_SIZE(size)+PREFIX_SIZE);//分配内存，后面多申请的PREFIX_SIZE是用于存放本次申请 size 大小的值，可用的内存空间只是size字节
+
+    //分配内存，后面多申请的PREFIX_SIZE是用于存放本次申请 size 大小的值，可用的内存空间只是size字节
+    void *ptr = malloc(MALLOC_MIN_SIZE(size)+PREFIX_SIZE);
 
     if (!ptr) return NULL;//若分配内存失败，则返回NULL
 
@@ -224,7 +226,7 @@ void *zcalloc_usable(size_t size, size_t *usable) {
 
 /* Try reallocating memory, and return NULL if failed.
  * '*usable' is set to the usable size if non NULL. */
-// 尝试在ptr原地址上分配更多空间（扩容）
+// 让ptr指向更大的空间或回收指向的空间
 void *ztryrealloc_usable(void *ptr, size_t size, size_t *usable) {
     ASSERT_NO_SIZE_OVERFLOW(size);
 #ifndef HAVE_MALLOC_SIZE
@@ -235,7 +237,7 @@ void *ztryrealloc_usable(void *ptr, size_t size, size_t *usable) {
 
     /* 不分配空间，只释放空间 not allocating anything, just redirect to free. */
     if (size == 0 && ptr != NULL) {
-        zfree(ptr);
+        zfree(ptr);//释放ptr指向的空间
         if (usable) *usable = 0;
         return NULL;
     }
@@ -274,7 +276,7 @@ void *ztryrealloc_usable(void *ptr, size_t size, size_t *usable) {
 }
 
 /* Reallocate memory and zero it or panic */
-// 对ptr 扩容
+// 扩缩容到size，失败则回调zmalloc_oom_handler处理。自动回收旧空间
 void *zrealloc(void *ptr, size_t size) {
     ptr = ztryrealloc_usable(ptr, size, NULL);//对ptr 扩容
     if (!ptr && size != 0) zmalloc_oom_handler(size);//如果分配失败，则调用oom handler
@@ -282,6 +284,7 @@ void *zrealloc(void *ptr, size_t size) {
 }
 
 /* Try Reallocating memory, and return NULL if failed. */
+// // 扩缩容到size，失败则返回NULL。自动回收旧空间
 void *ztryrealloc(void *ptr, size_t size) {
     ptr = ztryrealloc_usable(ptr, size, NULL);
     return ptr;

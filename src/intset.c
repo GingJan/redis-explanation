@@ -35,6 +35,7 @@
 #include "zmalloc.h"
 #include "endianconv.h"
 #include "redisassert.h"
+#include <assert.h>
 
 /* Note that these encodings are ordered, so:
  * INTSET_ENC_INT16 < INTSET_ENC_INT32 < INTSET_ENC_INT64. */

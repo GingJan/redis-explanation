@@ -92,13 +92,14 @@ connection *connCreateSocket() {
  * is not in an error state (which is not possible for a socket connection,
  * but could but possible with other protocols).
  */
-connection *connCreateAcceptedSocket(int fd) {//对fd进行封装并返回一个conn实例
+connection *connCreateAcceptedSocket(int fd) {//对fd（新连接）进行封装wrapper并返回一个conn实例
     connection *conn = connCreateSocket();//为conn封装具体方法
     conn->fd = fd;
     conn->state = CONN_STATE_ACCEPTING;
     return conn;
 }
-//注册 连接established 处理函数
+
+//注册 连接建立（established）的处理函数
 static int connSocketConnect(connection *conn, const char *addr, int port, const char *src_addr, ConnectionCallbackFunc connect_handler) {
     int fd = anetTcpNonBlockBestEffortBindConnect(NULL,addr,port,src_addr);//创建fd
     if (fd == -1) {
@@ -113,7 +114,7 @@ static int connSocketConnect(connection *conn, const char *addr, int port, const
     conn->conn_handler = connect_handler;
 
     //往el注册对fd的可写事件监听，当有可写事件触发时，调用ae_handler函数并传入conn数据
-    aeCreateFileEvent(server.el, conn->fd, AE_WRITABLE, conn->type->ae_handler, conn);
+    aeCreateFileEvent(server.el, conn->fd, AE_WRITABLE, conn->type->ae_handler, conn);//注册epoll的可写handler
 
     return C_OK;
 }
@@ -134,7 +135,7 @@ void connSetPrivateData(connection *conn, void *data) {
 }
 
 /* Get the associated private data pointer */
-// 获取关联的私有数据指针
+// 获取conn底层指向的client
 void *connGetPrivateData(connection *conn) {
     return conn->private_data;
 }
@@ -192,7 +193,7 @@ static int connSocketWritev(connection *conn, const struct iovec *iov, int iovcn
     // 通过使用一个 iovec 结构体数组来指定多个缓冲区，这样可以一次性将多个数据块写入同一个文件描述符。
     // 如果你有多个数据缓冲区，并且希望一次性将它们写入同一个文件或套接字，可以使用 writev。
     // 它能够减少多次系统调用带来的开销，提高效率。
-    int ret = writev(conn->fd, iov, iovcnt);
+    int ret = writev(conn->fd, iov, iovcnt);//系统调用，发出数据
     if (ret < 0 && errno != EAGAIN) {
         conn->last_errno = errno;
 
@@ -206,9 +207,10 @@ static int connSocketWritev(connection *conn, const struct iovec *iov, int iovcn
     return ret;
 }
 
+//数据读取handler，当连接有可读数据时，调用本函数进行处理
 static int connSocketRead(connection *conn, void *buf, size_t buf_len) {
     int ret = read(conn->fd, buf, buf_len);
-    if (!ret) {
+    if (!ret) {//ret=0，则表示连接已被关闭
         conn->state = CONN_STATE_CLOSED;//对端已关闭连接，即client无数据发送给server
     } else if (ret < 0 && errno != EAGAIN) {
         conn->last_errno = errno;
@@ -255,13 +257,13 @@ static int connSocketSetWriteHandler(connection *conn, ConnectionCallbackFunc fu
     if (func == conn->write_handler) return C_OK;
 
     conn->write_handler = func;
-    if (barrier)
+    if (barrier)//开启写屏蔽
         conn->flags |= CONN_FLAG_WRITE_BARRIER;//开启写屏障
     else
         conn->flags &= ~CONN_FLAG_WRITE_BARRIER;//关闭写屏障
 
     //对fd的写事件的监听进行处理
-    if (!conn->write_handler) //如果是移除write handler，则把底层epoll对本conn的可写事件的监听也移除
+    if (!conn->write_handler) //如果conn上的write handler被移除了，则把底层epoll对本conn的可写事件的监听也移除
         aeDeleteFileEvent(server.el,conn->fd,AE_WRITABLE);//在事件循环实例里，删除本conn的可写文件事件的监听
     else
         //在epoll创建对本conn的可写文件事件的监听
@@ -289,7 +291,7 @@ static const char *connSocketGetLastError(connection *conn) {
     return strerror(conn->last_errno);
 }
 
-//当el监听到fd有事件时（可写/可读），本函数会被调用（已被注册作为ae_handler，当epoll底层触发事件时，调用ae_handler）
+//当el监听到fd有事件时（无论可写/可读），本函数会被调用（已被注册作为ae_handler，当epoll底层触发事件时，调用ae_handler）
 static void connSocketEventHandler(struct aeEventLoop *el, int fd, void *clientData, int mask)
 {
     UNUSED(el);
@@ -332,22 +334,22 @@ static void connSocketEventHandler(struct aeEventLoop *el, int fd, void *clientD
      * 然而如果设置了WRITE_BARRIER标识，则把执行顺序倒转：先执行可写再执行可读事件
      * 这也很有用，例如想在beforeSleep()前做些如在回复响应前执行fsync刷盘等操作
      * */
-    int invert = conn->flags & CONN_FLAG_WRITE_BARRIER;//写屏障开启了
+    int invert = conn->flags & CONN_FLAG_WRITE_BARRIER;//invert开启了（是否反转操作，即先写再读）
 
-    int call_write = (mask & AE_WRITABLE) && conn->write_handler;//收到可写事件的触发
-    int call_read = (mask & AE_READABLE) && conn->read_handler;//收到可读事件的触发
+    int call_write = (mask & AE_WRITABLE) && conn->write_handler;//如果触发的是属于可写事件 并且 已经注册了write_hander
+    int call_read = (mask & AE_READABLE) && conn->read_handler;//如果触发的是属于可读事件 并且 已经注册了read_hander
 
     /* 处理普通的I/O流 Handle normal I/O flows */
-    if (!invert && call_read) {//没有开启写屏障 且 触发了可读事件
+    if (!invert && call_read) {//没有开启invert 则先处理读事件（如果有触发读事件）
         if (!callHandler(conn, conn->read_handler)) return;
     }
-    /* 触发可写事件 Fire the writable event. */
-    if (call_write) {//触发了可写事件
-        if (!callHandler(conn, conn->write_handler)) return;
+    /* 触发了可写事件 Fire the writable event. */
+    if (call_write) {
+        if (!callHandler(conn, conn->write_handler)) return;//调用conn的write_handler
     }
     /* If we have to invert the call, fire the readable event now
      * after the writable one. */
-    if (invert && call_read) {//开启了写屏障 且 触发了可写事件，那么逻辑就是先处理可读事件，再处理可写事件
+    if (invert && call_read) {//开启了invert 则先处理写事件，再处理读事件（如果）
         if (!callHandler(conn, conn->read_handler)) return;
     }
 }
@@ -393,11 +395,11 @@ static int connSocketGetType(connection *conn) {
 }
 
 ConnectionType CT_Socket = {//连接socket的处理函数具体实现
-    .ae_handler = connSocketEventHandler,
+    .ae_handler = connSocketEventHandler,//当el监听到fd有事件时（无论可写/可读），本函数会被调用
     .close = connSocketClose,
     .write = connSocketWrite,//调用系统write()函数，写数据给client
     .writev = connSocketWritev,//调用系统writev()函数，写数据给client
-    .read = connSocketRead,
+    .read = connSocketRead,//调用系统read()函数，从client连接里读取数据
     .accept = connSocketAccept,//accept 回调函数
     .connect = connSocketConnect,
     .set_write_handler = connSocketSetWriteHandler,

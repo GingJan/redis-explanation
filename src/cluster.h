@@ -167,7 +167,7 @@ typedef struct clusterDictEntryMetadata {
 
 
 typedef struct clusterState {
-    clusterNode *myself;  /* This node */
+    clusterNode *myself;  /* 指向本节点 This node */
     uint64_t currentEpoch;
     int state;            /* CLUSTER_OK, CLUSTER_FAIL, ... */
     int size;             /* Num of master nodes with at least one slot */

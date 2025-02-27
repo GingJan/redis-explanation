@@ -1418,11 +1418,11 @@ int loadSingleAppendOnlyFile(char *filename) {
         struct redisCommand *cmd;
 
         /* Serve the clients from time to time */
-        if (!(loops++ % 1024)) {
+        if (!(loops++ % 1024)) {//每1024次就执行一次
             off_t progress_delta = ftello(fp) - last_progress_report_size;
             loadingIncrProgress(progress_delta);
             last_progress_report_size += progress_delta;
-            processEventsWhileBlocked();
+            processEventsWhileBlocked();//在加载每加载1K数据，就执行一次
             processModuleLoadingProgressEvent(1);
         }
         if (fgets(buf,sizeof(buf),fp) == NULL) {

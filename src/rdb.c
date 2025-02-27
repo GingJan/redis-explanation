@@ -2721,9 +2721,9 @@ void loadingAbsProgress(off_t pos) {
 
 /* Refresh the incremental loading progress info */
 void loadingIncrProgress(off_t size) {
-    server.loading_loaded_bytes += size;
+    server.loading_loaded_bytes += size;//已加载的字节数
     if (server.stat_peak_memory < zmalloc_used_memory())
-        server.stat_peak_memory = zmalloc_used_memory();
+        server.stat_peak_memory = zmalloc_used_memory();//使用的内存大小峰值
 }
 
 /* Update the file name currently being loaded */
@@ -2769,7 +2769,8 @@ void stopSaving(int success) {
                           NULL);
 }
 
-/* Track loading progress in order to serve client's from time to time
+/* 追踪加载进度，以便偶尔处理client的请求，如有必要则计算rdb文件的checksum值
+ * Track loading progress in order to serve client's from time to time
    and if needed calculate rdb checksum  */
 void rdbLoadProgressCallback(rio *r, const void *buf, size_t len) {
     if (server.rdb_checksum)
@@ -2780,7 +2781,7 @@ void rdbLoadProgressCallback(rio *r, const void *buf, size_t len) {
         if (server.masterhost && server.repl_state == REPL_STATE_TRANSFER)
             replicationSendNewlineToMaster();
         loadingAbsProgress(r->processed_bytes);
-        processEventsWhileBlocked();
+        processEventsWhileBlocked();//加载rdb文件
         processModuleLoadingProgressEvent(0);
     }
 }

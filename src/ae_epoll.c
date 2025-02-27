@@ -32,11 +32,11 @@
 #include <sys/epoll.h>
 
 typedef struct aeApiState {
-    int epfd;//epoll实例
+    int epfd;//epoll实例的fd
     struct epoll_event *events;
 } aeApiState;
 
-//创建epoll实例
+//创建epoll实例（epoll_create）
 static int aeApiCreate(aeEventLoop *eventLoop) {
     aeApiState *state = zmalloc(sizeof(aeApiState));
 
@@ -73,6 +73,7 @@ static void aeApiFree(aeEventLoop *eventLoop) {
     zfree(state);
 }
 
+//epoll_ctl(ADD)
 static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     aeApiState *state = eventLoop->apidata;
     struct epoll_event ee = {0}; /* avoid valgrind warning */
@@ -90,6 +91,7 @@ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     return 0;
 }
 
+//epoll_ctl(DEL)
 static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int delmask) {
     aeApiState *state = eventLoop->apidata;
     struct epoll_event ee = {0}; /* avoid valgrind warning */

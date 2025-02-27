@@ -44,6 +44,7 @@
 #include "listpack_malloc.h"
 #include "redisassert.h"
 #include "util.h"
+#include <assert.h>
 
 #define LP_HDR_SIZE 6       /* 32 bit total len + 16 bit number of elements. */
 #define LP_HDR_NUMELE_UNKNOWN UINT16_MAX

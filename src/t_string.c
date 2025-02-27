@@ -547,7 +547,7 @@ void mgetCommand(client *c) {
             if (o->type != OBJ_STRING) {
                 addReplyNull(c);
             } else {
-                addReplyBulk(c,o);
+                addReplyBulk(c,o);//把响应数据写入到c的输出缓冲里
             }
         }
     }

@@ -1432,8 +1432,8 @@ typedef struct {
 #endif
 
 #define CHILD_TYPE_NONE 0
-#define CHILD_TYPE_RDB 1
-#define CHILD_TYPE_AOF 2
+#define CHILD_TYPE_RDB 1 //fork子进程：用于RDB文件生成的目的
+#define CHILD_TYPE_AOF 2 //fork子进程：用于AOF重写的目的
 #define CHILD_TYPE_LDB 3
 #define CHILD_TYPE_MODULE 4
 
@@ -1576,7 +1576,7 @@ struct redisServer {
     long long stat_rdb_saves;       /* number of rdb saves performed */
     long long stat_fork_time;       /* Time needed to perform latest fork() */
     double stat_fork_rate;          /* Fork rate in GB/sec. */
-    long long stat_total_forks;     /* Total count of fork. */
+    long long stat_total_forks;     /* 总共fork了多少次子进程 Total count of fork. */
     long long stat_rejected_conn;   /* 拒绝连接的次数 Clients rejected because of maxclients */
     long long stat_sync_full;       /* Number of full resyncs with slaves. */
     long long stat_sync_partial_ok; /* Number of accepted PSYNC requests. */

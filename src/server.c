@@ -206,6 +206,8 @@ mstime_t mstime(void) {
  * exit(), because the latter may interact with the same file objects used by
  * the parent process. However if we are testing the coverage normal exit() is
  * used in order to obtain the right coverage information. */
+// 在完成RDB文件导出或AOF重写后，退出子进程。
+// 如果是在覆盖测试，则使用exit退出以便获取覆盖率测试信息，否则使用_exit退出
 void exitFromChild(int retcode) {
 #ifdef COVERAGE_TEST
     exit(retcode);
@@ -2728,7 +2730,7 @@ void initServer(void) {
  * 需要注意，线程的创建时，由于在ld.so文件里的竞态bug
  */
 void InitServerLast() {
-    bioInit();//初始化后台系统，创建对应后台线程
+    bioInit();//初始化后台任务机制，创建对应后台线程
     initThreadedIO();// 创建并初始化并运行 多线程IO，多个IO线程在后台就绪，等待client的数据
     set_jemalloc_bg_thread(server.jemalloc_bg_thread);
     server.initial_memory_usage = zmalloc_used_memory();
@@ -6487,8 +6489,8 @@ void removeSignalHandlers(void) {
 static void sigKillChildHandler(int sig) {
     UNUSED(sig);
     int level = server.in_fork_child == CHILD_TYPE_MODULE? LL_VERBOSE: LL_WARNING;
-    serverLogFromHandler(level, "Received SIGUSR1 in child, exiting now.");
-    exitFromChild(SERVER_CHILD_NOERROR_RETVAL);
+    serverLogFromHandler(level, "Received SIGUSR1 in child, exiting now.");//写日志
+    exitFromChild(SERVER_CHILD_NOERROR_RETVAL);//退出子进程（无错误，正常退出）
 }
 
 void setupChildSignalHandlers(void) {
@@ -6497,8 +6499,8 @@ void setupChildSignalHandlers(void) {
     /* When the SA_SIGINFO flag is set in sa_flags then sa_sigaction is used.
      * Otherwise, sa_handler is used. */
     sigemptyset(&act.sa_mask);
-    act.sa_flags = 0;
-    act.sa_handler = sigKillChildHandler;
+    act.sa_flags = 0;//信号
+    act.sa_handler = sigKillChildHandler;//信号处理函数
     sigaction(SIGUSR1, &act, NULL);
 }
 
@@ -6531,7 +6533,7 @@ int redisFork(int purpose) {
     int childpid;
     long long start = ustime();
     if ((childpid = fork()) == 0) {
-        /* Child.
+        /* 子进程逻辑
          *
          * The order of setting things up follows some reasoning:
          * Setup signal handlers first because a signal could fire at any time.
@@ -6539,13 +6541,13 @@ int redisFork(int purpose) {
          * memory resources are low.
          */
         server.in_fork_child = purpose;
-        setupChildSignalHandlers();
+        setupChildSignalHandlers();//设置子进程的信号处理函数
         setOOMScoreAdj(CONFIG_OOM_BGCHILD);
         dismissMemoryInChild();
-        closeChildUnusedResourceAfterFork();
+        closeChildUnusedResourceAfterFork();//关闭子进程不会用到的资源（这些资源在子进程fork出来时，会从父进程继承）
     } else {
         /* Parent */
-        if (childpid == -1) {
+        if (childpid == -1) {//子进程fork错误
             int fork_errno = errno;
             if (isMutuallyExclusiveChildType(purpose)) closeChildInfoPipe();
             errno = fork_errno;
@@ -6643,8 +6645,8 @@ void dismissClientMemory(client *c) {
 
 /* In the child process, we don't need some buffers anymore, and these are
  * likely to change in the parent when there's heavy write traffic.
- * We dismis them right away, to avoid CoW.
- * see dismissMemeory(). */
+ * We dismiss them right away, to avoid CoW.
+ * see dismissMemory(). */
 void dismissMemoryInChild(void) {
     /* madvise(MADV_DONTNEED) may not work if Transparent Huge Pages is enabled. */
     if (server.thp_enabled) return;
@@ -6817,7 +6819,7 @@ int redisSetProcTitle(char *title) {
     sds proc_title = expandProcTitleTemplate(server.proc_title_template, title);
     if (!proc_title) return C_ERR;  /* Not likely, proc_title_template is validated */
 
-    setproctitle("%s", proc_title);
+    setproctitle("%s", proc_title);//设置进程的title
     sdsfree(proc_title);
 #else
     UNUSED(title);
@@ -7170,7 +7172,7 @@ int main(int argc, char **argv) {
         moduleInitModulesSystemLast();
         moduleLoadFromQueue();//加载配置文件里loadmodule指定的模块
         ACLLoadUsersAtStartup();//加载ACL配置
-        InitServerLast();//在主线程初始化启动时，也开始启动IO线程
+        InitServerLast();//在主线程初始化启动时，也开始启动后台线程+IO线程
         aofLoadManifestFromDisk();
         loadDataFromDisk();//加载RDB或重放AOF文件
         aofOpenIfNeededOnServerStart();

@@ -90,7 +90,7 @@ void *bioProcessBackgroundJobs(void *arg);
 #define REDIS_THREAD_STACK_SIZE (1024*1024*4)
 
 /* Initialize the background system, spawning the thread. */
-// 初始化后台系统，创建对应线程
+// 初始化后台机制，创建对应线程
 void bioInit(void) {
     pthread_attr_t attr;
     pthread_t thread;
@@ -127,7 +127,7 @@ void bioInit(void) {
 }
 
 void bioSubmitJob(int type, struct bio_job *job) {
-    pthread_mutex_lock(&bio_mutex[type]);
+    pthread_mutex_lock(&bio_mutex[type]);//对当前线程上锁
     listAddNodeTail(bio_jobs[type],job);
     bio_pending[type]++;
     pthread_cond_signal(&bio_newjob_cond[type]);

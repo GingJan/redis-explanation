@@ -2212,6 +2212,7 @@ int rewriteAppendOnlyFileRio(rio *aof) {
 
     if (rewriteFunctions(aof) == 0) goto werr;
 
+    //aof重写的实现逻辑
     for (j = 0; j < server.dbnum; j++) {
         char selectcmd[] = "*2\r\n$6\r\nSELECT\r\n";
         redisDb *db = server.db+j;
@@ -2338,13 +2339,14 @@ int rewriteAppendOnlyFile(char *filename) {
     }
 
     /* Make sure data will not remain on the OS's output buffers */
-    if (fflush(fp)) goto werr;
-    if (fsync(fileno(fp))) goto werr;
-    if (fclose(fp)) { fp = NULL; goto werr; }
+    if (fflush(fp)) goto werr;//立即刷入磁盘
+    if (fsync(fileno(fp))) goto werr;//立即刷入磁盘
+    if (fclose(fp)) { fp = NULL; goto werr; }//关闭fd
     fp = NULL;
 
     /* Use RENAME to make sure the DB file is changed atomically only
      * if the generate DB file is ok. */
+    //使用rename函数，改名临时文件
     if (rename(tmpfile,filename) == -1) {
         serverLog(LL_WARNING,"Error moving temp append only file on the final destination: %s", strerror(errno));
         unlink(tmpfile);
@@ -2359,7 +2361,7 @@ int rewriteAppendOnlyFile(char *filename) {
 werr:
     serverLog(LL_WARNING,"Write error writing append only file on disk: %s", strerror(errno));
     if (fp) fclose(fp);
-    unlink(tmpfile);
+    unlink(tmpfile);//删除临时文件
     stopSaving(0);
     return C_ERR;
 }
@@ -2367,7 +2369,18 @@ werr:
  * AOF background rewrite
  * ------------------------------------------------------------------------- */
 
-/* This is how rewriting of the append only file in background works:
+/* aof重写如何在后台运行 This is how rewriting of the append only file in background works:
+ * 1）用户输入BGREWRITEAOF命令
+ * 2）redis调用本函数，该函数会fork出：
+ *  2a）子进程在临时文件里重写aof文件
+ *  2b）期间，父进程打开一个新的aof文件以继续记录新命令
+ * 3）当子进程完成2a）的操作后，退出
+ * 4）父进程捕获退出码，如果状态正常，则会执行以下操作：
+ *  4a）获取一个新的 BASE 文件名，并将之前的（如果存在）标记为 HISTORY 类型。
+ *  4b) 使用 rename(2) 将临时文件重命名为新的 BASE 文件名。
+ *  4c) 将重写后的 INCR AOF 文件标记为 HISTORY 类型。
+ *  4d) 持久化 AOF 清单（manifest）文件。
+ *  4e) 使用后台 I/O（bio）删除历史文件。
  *
  * 1) The user calls BGREWRITEAOF
  * 2) Redis calls this function, that forks():
@@ -2399,11 +2412,12 @@ int rewriteAppendOnlyFileBackground(void) {
     if (openNewIncrAofForAppend() != C_OK) return C_ERR;
     server.stat_aof_rewrites++;
     if ((childpid = redisFork(CHILD_TYPE_AOF)) == 0) {
+        //子进程逻辑
         char tmpfile[256];
 
         /* Child */
         redisSetProcTitle("redis-aof-rewrite");
-        redisSetCpuAffinity(server.aof_rewrite_cpulist);
+        redisSetCpuAffinity(server.aof_rewrite_cpulist);//设置aof重写的子进程的cpu亲和性
         snprintf(tmpfile,256,"temp-rewriteaof-bg-%d.aof", (int) getpid());
         if (rewriteAppendOnlyFile(tmpfile) == C_OK) {
             sendChildCowInfo(CHILD_INFO_TYPE_AOF_COW_SIZE, "AOF rewrite");
